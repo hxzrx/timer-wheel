@@ -15,3 +15,6 @@ For some background on timers in Linux
 ;; A third counter triggers the completion of the test.
 (tw.examples:test 100 1500)
 ```
+
+# Testing
+I've tested on Windows with SBCL 1.3.  I could get a timer wheel running with a resolution of 20 milliseconds without overruns (Nothing else going on).  If you start loading up the garbage collector, I'm guessing that you'll start getting overruns.  Test to determine what works.

@@ -6,7 +6,9 @@
   :license "Specify license here"
   :depends-on (#:bordeaux-threads #:rt-events)
   :serial t
-  :components ((:file "package")
-	       (:file "bt-timeout")
-               (:file "timer-wheel")))
+  :components ((:module "src"
+			:components
+			((:file "package")
+			 (:file "bt-timeout")
+			 (:file "timer-wheel")))))
 

@@ -32,6 +32,7 @@
 	  printer-timer
 	  (tw:make-timer (lambda ()
 			   (format out "Tick: ~D~%" counter)
+			   (force-output out)
 			   (tw:schedule-timer wheel printer-timer
 					      :milliseconds print-interval-ms))))
     
