@@ -26,6 +26,8 @@
 (defclass wheel ()
   ((context :accessor wheel-context
 	    :initarg :context)
+   (timeout-lock :accessor timeout-lock
+		 :initform (bt:make-lock))
    (thread :accessor wheel-thread
 	   :initarg :thread
 	   :initform nil)
@@ -35,7 +37,9 @@
 		 :initform 0)
    (resolution :accessor wheel-resolution
 	       :initarg :resolution
-	       :initform *default-resolution*)))
+	       :initform *default-resolution*)
+   (reset :accessor reset
+	  :initform nil)))
 (defun make-wheel (&optional
 		     (size *default-size*)
 		     (resolution *default-resolution*))
@@ -51,7 +55,7 @@
 (defmethod tick ((wheel wheel))
   (let (tlist)
     ;; Update the wheel
-    (bt:with-lock-held ((timeout-lock (wheel-context wheel)))
+    (bt:with-lock-held ((timeout-lock wheel))
       (setf (current-slot wheel) (mod (1+ (current-slot wheel))
 				      (length (slots wheel))))
       (rotatef tlist (elt (slots wheel) (current-slot wheel))))
@@ -77,7 +81,7 @@
     (error 'unscheduled :timer timer))
   (let ((max-wheel-ticks (length (slots wheel))))
     (if (< (remaining timer) max-wheel-ticks)
-	(bt:with-lock-held ((timeout-lock (wheel-context wheel)))
+	(bt:with-lock-held ((timeout-lock wheel))
 	  (let ((future-slot (calculate-future-slot
 			      (current-slot wheel)
 			      (remaining timer)
@@ -99,7 +103,7 @@
     t))
 
 (defmethod uninstall-timer ((wheel wheel) (timer timer))
-  (bt:with-lock-held ((timeout-lock (wheel-context wheel)))
+  (bt:with-lock-held ((timeout-lock wheel))
     (setf (elt (slots wheel) (installed-slot timer))
 	  (remove timer
 		  (elt (slots wheel) (installed-slot timer))
@@ -149,24 +153,22 @@ for valid values."
 (defun manage-timer-wheel (wheel)
   (loop
      (wait-for-timeout (wheel-context wheel))
-     (when (reset (wheel-context wheel))
+     (when (reset wheel)
        (return))
      ;; Do the things!
      (tick wheel)))
 
 (defun shutdown-timer-wheel (wheel)
-  (setf (reset (wheel-context wheel)) t)
+  (setf (reset wheel) t)
 
   (shutdown-context (wheel-context wheel))
   
   (when (wheel-thread wheel)
     (when (bt:thread-alive-p (wheel-thread wheel))
-      (bt:with-lock-held ((timeout-lock (wheel-context wheel)))
-	(bt:condition-notify (timeout-condition-variable (wheel-context wheel))))
       (bt:join-thread (wheel-thread wheel)))
     (setf (wheel-thread wheel) nil))
 
-  (setf (reset (wheel-context wheel)) nil))
+  (setf (reset wheel) nil))
 
 
 (defmacro with-timer-wheel (wheel &body body)
