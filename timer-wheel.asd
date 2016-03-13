@@ -9,6 +9,7 @@
   :components ((:module "src"
 			:components
 			((:file "package")
+			 (:file "utils")
 			 (:file "bt-timeout")
 			 (:file "timer-wheel")))))
 

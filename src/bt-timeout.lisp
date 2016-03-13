@@ -1,25 +1,12 @@
 (in-package #:timer-wheel)
 
-;;; TODO: move this to its own file
-(defconstant +milliseconds-per-second+ 1000)
-(defclass timeout-context ()
-  ())
-;;; End TODO
-
 ;;; The timeout context when the backend is bordeaux-threads
 (defclass bt-timeout-context (timeout-context)
   ((end :accessor context-end
-	:initform nil)
-   (resolution :accessor context-resolution
-	       :initarg :resolution)
-   (timeout-overrun :accessor timeout-overrun
-		    :initform 0)))
+	:initform nil)))
 
 (defun make-context ()
   (make-instance 'bt-timeout-context))
-
-(defun shutdown-context (context)
-  )
 
 (defun current-milliseconds ()
   "Utility function to get the current time in milliseconds."
@@ -34,6 +21,9 @@
   ;; Initialize the endpoint
   (setf (context-resolution context) resolution-milliseconds
 	(context-end context) (current-milliseconds)))
+
+(defun shutdown-context (context)
+  )
 
 (defun wait-for-timeout (context)
   "This thread maintains a continually updating real-time that it is targetting
