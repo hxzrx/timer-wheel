@@ -17,7 +17,7 @@ For some background on timers in Linux
 ```
 
 # Testing
-I've tested on Windows with SBCL 1.3.  I could get a timer wheel running with a resolution of 20 milliseconds without overruns (Nothing else going on).  If you start loading up the garbage collector, I'm guessing that you'll start getting overruns.  Test to determine what works.
+I've tested on Windows with SBCL 1.3 and CCL 1.11.  I could get a timer wheel running with a resolution of 20 milliseconds without overruns (Nothing else going on).  If you start loading up the garbage collector, I'm guessing that you'll start getting overruns.  Test to determine what works.
 
 # TODO
 - Add a hierarchical timer wheel
