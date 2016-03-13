@@ -5,7 +5,7 @@
   ((end :accessor context-end
 	:initform nil)))
 
-(defun make-context ()
+(defun make-bt-context ()
   (make-instance 'bt-timeout-context))
 
 (defun current-milliseconds ()

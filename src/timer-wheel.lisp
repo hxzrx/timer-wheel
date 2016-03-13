@@ -42,11 +42,13 @@
 	  :initform nil)))
 (defun make-wheel (&optional
 		     (size *default-size*)
-		     (resolution *default-resolution*))
+		     (resolution *default-resolution*)
+		     (backend :bt))
   (make-instance 'wheel
 		 :slots (make-array size :initial-element nil)
 		 :resolution resolution
-		 :context (make-context)))
+		 :context (ecase backend
+			    (:bt (make-bt-context)))))
 
 (defgeneric install-timer (wheel timer))
 (defgeneric uninstall-timer (wheel timer))
