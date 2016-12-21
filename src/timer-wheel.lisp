@@ -16,7 +16,7 @@
 	      :initarg :remaining
 	      :initform 'unscheduled)
    (installed-slot :accessor installed-slot
-		   :initform 0)
+		   :initform nil)
    (callback :accessor callback
 	     :initarg :callback)))
 
@@ -111,16 +111,19 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
 	    ))
 	;; The timer needs to be reinstalled later
 	(progn (decf (remaining timer) max-wheel-ticks)
-	       (push timer (elt (slots wheel) (current-slot wheel)))))
+	       (push timer (elt (slots wheel) (current-slot wheel)))
+	       (setf (installed-slot timer) (current-slot wheel))))
     t))
 
 (defmethod uninstall-timer ((wheel wheel) (timer timer))
-  (bt:with-lock-held ((timeout-lock wheel))
-    (setf (elt (slots wheel) (installed-slot timer))
-	  (remove timer
-		  (elt (slots wheel) (installed-slot timer))
-		  :test #'eq)
-	  (remaining timer) 'unscheduled)))
+  (when (installed-slot timer)
+    (bt:with-lock-held ((timeout-lock wheel))
+      (setf (elt (slots wheel) (installed-slot timer))
+	    (remove timer
+		    (elt (slots wheel) (installed-slot timer))
+		    :test #'eq)
+	    (remaining timer) 'unscheduled
+	    (installed-slot timer) nil))))
 
 (defun schedule-timer (wheel timer &key
 				     (ticks nil ticks-p)
