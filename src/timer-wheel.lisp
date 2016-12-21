@@ -65,7 +65,7 @@
     ;; Then run the timers outside the lock
     (dolist (timer tlist)
       (if (zerop (remaining timer))
-	  (funcall (callback timer))
+	  (funcall (callback timer) wheel timer)
 	  (install-timer wheel timer)))))
 
 (defmethod install-timer :before (wheel timer)

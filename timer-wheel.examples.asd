@@ -9,5 +9,6 @@
   :components ((:module "examples"
 			:components
 			((:file "package")
-			 (:file "timer-test")))))
+			 (:file "timer-test")
+			 (:file "simple")))))
 

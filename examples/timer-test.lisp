@@ -12,30 +12,27 @@
 	 (out *standard-output*)
 
 	 ;; Make sure we've got the bindings visible in the callbacks
-	 counter-timer 
-	 printer-timer)
+	 (counter-timer (tw:make-timer
+			 (lambda (wheel timer)
+			   (incf counter)
+			   (tw:schedule-timer wheel timer
+					      :ticks 1)))) 
+	 (printer-timer (tw:make-timer
+			 (lambda (wheel timer)
+			   (format out "Tick: ~D~%" counter)
+			   (force-output out)
+			   (tw:schedule-timer wheel timer
+					      :milliseconds print-interval-ms)))))
 
     ;; Set up the completion notification
     (tw:schedule-timer wheel
 		       (tw:make-timer
-			(lambda ()
+			(lambda (wheel timer)
+			  (declare (ignore wheel timer))
 			  (bt:with-lock-held (complete-lock)
 			    (bt:condition-notify complete-cv))))
 		       :milliseconds end-ms)
-    
-    ;; Define the actual timers
-    (setf counter-timer
-	  (tw:make-timer (lambda ()
-			   (incf counter)
-			   (tw:schedule-timer wheel counter-timer
-					      :ticks 1)))
-	  printer-timer
-	  (tw:make-timer (lambda ()
-			   (format out "Tick: ~D~%" counter)
-			   (force-output out)
-			   (tw:schedule-timer wheel printer-timer
-					      :milliseconds print-interval-ms))))
-    
+
     ;; Start processing, and then shutdown gracefully
     (tw:with-timer-wheel wheel
       (tw:schedule-timer wheel printer-timer :milliseconds print-interval-ms)
