@@ -1,5 +1,5 @@
 # Timer Wheel
-A portable Common Lisp timer wheel implementation.  A timer wheel provides an efficient mechanism to implement tick-based timer routines.  The portable part of this is the backend using Boreaux Threads to run a background thread operating the wheel.  
+A portable Common Lisp timer wheel implementation.  A timer wheel provides an efficient mechanism to implement tick-based timer routines.  The portable part of this is the backend using Boreaux Threads to run a background thread operating the wheel.
 
 ## References
 For the original reference I used, see "Real-Time Embedded Systems" by Xiaocong Fan, chapter 22.3.

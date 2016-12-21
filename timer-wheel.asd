@@ -1,10 +1,10 @@
 ;;;; timer-wheel.asd
 
 (asdf:defsystem #:timer-wheel
-  :description "Describe timer-wheel here"
-  :author "Your Name <your.name@example.com>"
-  :license "Specify license here"
-  :depends-on (#:bordeaux-threads #:rt-events)
+  :description "A timer wheel implementation with BORDEAUX-THREADS backend."
+  :author "Nick Patrick <npatrick04@gmail.com"
+  :license "MIT"
+  :depends-on (#:bordeaux-threads)
   :serial t
   :components ((:module "src"
 			:components

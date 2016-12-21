@@ -4,8 +4,8 @@
 
 ;;; "timer-wheel" goes here. Hacks and glory await!
 
-(defparameter *default-resolution* 100)
-(defparameter *default-size* 100)
+(defparameter *default-resolution* 100 "milliseconds")
+(defparameter *default-size* 100 "slots per wheel")
 
 (define-condition unscheduled (error)
   ((timer :initarg :timer
@@ -19,7 +19,10 @@
 		   :initform 0)
    (callback :accessor callback
 	     :initarg :callback)))
+
 (defun make-timer (callback)
+  "Return a timer object with CALLBACK being
+a function that accepts WHEEL and TIMER arguments."
   (make-instance 'timer
 		 :callback callback))
 
@@ -40,19 +43,25 @@
 	       :initform *default-resolution*)
    (reset :accessor reset
 	  :initform nil)))
+
 (defun make-wheel (&optional
 		     (size *default-size*)
 		     (resolution *default-resolution*)
 		     (backend :bt))
+  "Make a timer wheel with SIZE slots, with a millisecond RESOLUTION,
+and BACKEND of :BT (bordeaux-threads... the only backend)."
   (make-instance 'wheel
 		 :slots (make-array size :initial-element nil)
 		 :resolution resolution
 		 :context (ecase backend
 			    (:bt (make-bt-context)))))
 
-(defgeneric install-timer (wheel timer))
-(defgeneric uninstall-timer (wheel timer))
-(defgeneric tick (wheel))
+(defgeneric install-timer (wheel timer)
+  (:documentation "Add TIMER to the WHEEL schedule."))
+(defgeneric uninstall-timer (wheel timer)
+  (:documentation "Remove TIMER from the WHEEL schedule."))
+(defgeneric tick (wheel)
+  (:documentation "Operate one tick of the wheel scedule."))
 
 (defmethod tick ((wheel wheel))
   (let (tlist)
@@ -69,6 +78,7 @@
 	  (install-timer wheel timer)))))
 
 (defmethod install-timer :before (wheel timer)
+  (declare (ignore timer))
   (unless (wheel-thread wheel)
     (initialize-timer-wheel wheel)))
 
@@ -143,6 +153,8 @@ for valid values."
     (install-timer wheel timer)))
 
 (defun initialize-timer-wheel (wheel)
+  "Ensure the WHEEL is stopped, then initialize the WHEEL
+context, and start the WHEEL thread."
   (shutdown-timer-wheel wheel)
   (initialize-timer (wheel-context wheel)
 		    (wheel-resolution wheel))
@@ -153,6 +165,7 @@ for valid values."
 	 :name "timer-wheel")))
 
 (defun manage-timer-wheel (wheel)
+  "This is the main entry point of the timer WHEEL thread."
   (loop
      (wait-for-timeout (wheel-context wheel))
      (when (reset wheel)
@@ -161,6 +174,7 @@ for valid values."
      (tick wheel)))
 
 (defun shutdown-timer-wheel (wheel)
+  "Notify the wheel thread to terminate, then wait for it."
   (setf (reset wheel) t)
 
   (shutdown-context (wheel-context wheel))
@@ -174,6 +188,8 @@ for valid values."
 
 
 (defmacro with-timer-wheel (wheel &body body)
+  "Execute BODY after initializing WHEEL, then
+clean up by shutting WHEEL down after leaving the scope."
   `(unwind-protect
 	(progn
 	  (initialize-timer-wheel ,wheel)

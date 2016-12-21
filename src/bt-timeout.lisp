@@ -6,6 +6,7 @@
 	:initform nil)))
 
 (defun make-bt-context ()
+  "Return a data structure for managing ticks with BORDEAUX-THREADS"
   (make-instance 'bt-timeout-context))
 
 (defun current-milliseconds ()

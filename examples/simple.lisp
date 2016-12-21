@@ -28,4 +28,6 @@
       (dotimes (i times)
 	(wait)
 	(format t "Doing some heavy duty work ~D~%" i)
+
+	;; Try removing force-output...
 	(force-output)))))
