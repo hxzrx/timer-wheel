@@ -1,3 +1,6 @@
+;;; A timeout thunk API in response to this comp.lang.lisp post.
+;; https://groups.google.com/d/msg/comp.lang.lisp/OvFBJ2s_O2U/7H_x0eqHEAAJ
+
 (in-package #:timer-wheel.examples)
 
 (defparameter the-result 'not-computed)
