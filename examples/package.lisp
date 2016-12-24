@@ -2,4 +2,5 @@
   (:use #:cl #:timer-wheel)
   (:nicknames tw.examples)
   (:export #:test
-	   #:simple))
+	   #:simple
+	   #:execute-timeout))

@@ -3,8 +3,8 @@
 (defpackage #:timer-wheel
   (:use #:cl)
   (:nicknames #:tw)
-  (:export #:*wheel-size*
-	   #:*resolution*
+  (:export #:*default-size*
+	   #:*default-resolution*
 	   
 	   #:timer
 	   #:wheel

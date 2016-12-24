@@ -10,5 +10,6 @@
 			:components
 			((:file "package")
 			 (:file "timer-test")
-			 (:file "simple")))))
+			 (:file "simple")
+			 (:file "execute-timeout")))))
 
