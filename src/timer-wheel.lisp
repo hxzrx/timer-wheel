@@ -38,7 +38,7 @@ a function that accepts WHEEL and TIMER arguments."
 	  :initarg :slots)
    (current-slot :accessor current-slot
 		 :initform 0)
-   (resolution :accessor wheel-resolution
+   (resolution :reader wheel-resolution
 	       :initarg :resolution
 	       :initform *default-resolution*)
    (reset :accessor reset
@@ -118,12 +118,14 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
 (defmethod uninstall-timer ((wheel wheel) (timer timer))
   (when (installed-slot timer)
     (bt:with-lock-held ((timeout-lock wheel))
-      (setf (elt (slots wheel) (installed-slot timer))
-	    (remove timer
-		    (elt (slots wheel) (installed-slot timer))
-		    :test #'eq)
-	    (remaining timer) 'unscheduled
-	    (installed-slot timer) nil))))
+      ;; Check again in case something else already uninstalled the timer.
+      (when (installed-slot timer)
+	(setf (elt (slots wheel) (installed-slot timer))
+	      (remove timer
+		      (elt (slots wheel) (installed-slot timer))
+		      :test #'eq)
+	      (remaining timer) 'unscheduled
+	      (installed-slot timer) nil)))))
 
 (defun schedule-timer (wheel timer &key
 				     (ticks nil ticks-p)

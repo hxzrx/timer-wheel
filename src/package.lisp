@@ -18,6 +18,7 @@
 	   #:schedule-timer
 	   #:uninstall-timer
 	   #:remaining
+	   #:wheel-resolution
 
 	   #:initialize-timer-wheel
 	   #:shutdown-timer-wheel
