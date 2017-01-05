@@ -2,7 +2,7 @@
 
 (asdf:defsystem #:timer-wheel
   :description "A timer wheel implementation with BORDEAUX-THREADS backend."
-  :author "Nick Patrick <npatrick04@gmail.com"
+  :author "Nick Patrick <npatrick04@gmail.com>"
   :license "MIT"
   :depends-on (#:bordeaux-threads)
   :serial t
