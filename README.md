@@ -1,6 +1,8 @@
 # Timer Wheel
 A portable Common Lisp timer wheel implementation.  A timer wheel provides an efficient mechanism to implement tick-based timer routines.  The portable part of this is the backend using Boreaux Threads to run a background thread operating the wheel.
 
+Note that this package uses the internal-real-time to manage inter-tick timing intervals.  Thus the correctness of the interval depends on how the specific lisp implementation implements internal-real-time.  For instance, [SBCL currently uses gettimeofday internally](https://sourceforge.net/p/sbcl/mailman/message/35583449/) which means that a leap-second can stop time.
+
 ## References
 For the original reference I used, see "Real-Time Embedded Systems" by Xiaocong Fan, chapter 22.3.
 For some background on timers in Linux
