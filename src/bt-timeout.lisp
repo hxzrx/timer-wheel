@@ -1,7 +1,7 @@
 (in-package #:timer-wheel)
 
 ;;; The timeout context when the backend is bordeaux-threads
-(defclass bt-timeout-context (timeout-context)
+(defclass bt-timeout-context (timeout-context) ; 上下文是属于wheel的
   ((end :accessor context-end
 	:initform nil)))
 
@@ -12,7 +12,7 @@
 (defun current-milliseconds ()
   "Utility function to get the current time in milliseconds."
   (declare (optimize speed))
-  (* (get-internal-real-time)
+  (* (get-internal-real-time) ; 注意不是外界ut时间, 而是从系统启动至今的累计时间
      ;; Ensure we're talking milliseconds
      (/ +milliseconds-per-second+
 	internal-time-units-per-second)))
@@ -20,7 +20,7 @@
 (defun initialize-timer (context resolution-milliseconds)
   "Called from the wheel thread."
   ;; Initialize the endpoint
-  (setf (context-resolution context) resolution-milliseconds
+  (setf (context-resolution context) resolution-milliseconds ; 需要重置overrun, 原因见initialize-timer-wheel函数
 	(context-end context) (current-milliseconds)))
 
 (defun shutdown-context (context)
@@ -42,7 +42,7 @@
 	  (progn
 	    ;; Document the miss and reset the timeout as though
 	    ;; we just ended a perfect sleep.
-	    (incf (timeout-overrun context))
+	    (incf (timeout-overrun context)) ; 实际上overrun在本库中并没有其它作用, 可能用于其它的监控
 	    (setf (context-end context) new-start))
 
 	  ;; At least some amount to sleep, so do it.

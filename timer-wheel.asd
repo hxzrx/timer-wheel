@@ -1,8 +1,9 @@
 ;;;; timer-wheel.asd
 
 (asdf:defsystem #:timer-wheel
-  :description "A timer wheel implementation with BORDEAUX-THREADS backend."
-  :author "Nick Patrick <npatrick04@gmail.com>"
+  :description "A timer wheel implementation with BORDEAUX-THREADS backend.
+This is a fork of Nick Patrick's timer-wheel <https://github.com/npatrick04/timer-wheel> with several aspects got enhanced."
+  :author "He Xiang-zhi <xz.he@qq.com>"
   :license "MIT"
   :depends-on (#:bordeaux-threads)
   :serial t
@@ -12,4 +13,3 @@
 			 (:file "utils")
 			 (:file "bt-timeout")
 			 (:file "timer-wheel")))))
-
