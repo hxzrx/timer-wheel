@@ -12,19 +12,80 @@
 	  :reader unscheduled-timer)))
 
 (defclass timer () ; 计时器包含三个槽位: 剩余时间, 所属时轮槽位索引, 回调函数
-  ((remaining :accessor remaining
-	      :initarg :remaining
-	      :initform 'unscheduled)
-   (installed-slot :accessor installed-slot
-		   :initform nil)
-   (callback :accessor callback
-	     :initarg :callback)))
+  ((remaining       :accessor remaining     :initarg :remaining :initform 'unscheduled)
+   (installed-slot :accessor installed-slot :initform nil)
+   (callback       :accessor callback       :initarg :callback) ; 回调参数用于任务的重复调用
+   (result         :accessor result         :initarg :result :initform nil)   ; 给回调函数一个设置结果的可能, 一般不需要使用
+   ;;(fn             :accessor fn             :initarg :fn     :initform nil) ; used to replace callback, callback is better
+   ;; the timer has many slots now,
+   ;;(args           :accessor args           :initarg :args   :initform nil) ; fn's argument list
+   ;;(wheel          :accessor wheel          :initarg :wheel  :initform nil)
+   ;;(itself         :accessor itself         :initarg :itself :initform nil)
+   (scheduled-p    :accessor scheduled-p    :initform nil)     ; 已调度为T, 否则NIL
+   ;; 考虑是否有任务, 超时后就不再运行: 在调度时先设置超时槽位, 在荷载函数内实现是否运行.
+   (timeout-p      :accessor timeout-p      :initform nil)     ; 默认NIL, 若运行时已超时则置为T.
+   ;; 取消, 错误(用于记录未捕捉到的错误, 考虑是否有必要), 等待(不需要这个状态), 已运行, 超时, 完成(不需要, 调度器也不知道)
+   (status         :accessor status         :initarg :status   :initform nil)
+   (bindings       :accessor bindings       :initarg :bindings :initform nil)
+   (start          :accessor start          :initarg :start    :initform nil) ; start time of this work, in universal milliseconds
+   ;; the 3 slots below are used for periodical timer
+   (period         :accessor period         :initarg :period   :initform nil) ; period in milliseconds, nil for non-periodical timer
+   (runs           :accessor runs           :initarg :runs     :initform nil) ; will be scheduled how many times, nil for unlimit
+   (end            :accessor end            :initarg :end      :initform nil) ; end time of this work, in universal milliseconds
+   (name           :accessor name           :initarg :name     :initform (string (gensym "TIMER-")))
+   ))
 
-(defun make-timer (callback)
-  "Return a timer object with CALLBACK being
-a function that accepts WHEEL and TIMER arguments."
-  (make-instance 'timer
-		 :callback callback))
+(defun inspect-timer (timer)
+  (with-slots (name remaining result scheduled-p timeout-p status start period runs end bindings) timer
+    (format nil "Name: ~d, Remaining: ~d ticks, Scheduled-p: ~d, Timeout-p: ~d, Status: ~s, Start time: ~d, period: ~f seconds, Runs: ~d times left, End time: ~d, Bindings: ~d, Result: ~d"
+            name remaining scheduled-p timeout-p status
+            (if start (universal-milliseconds->timestamp start) nil)
+            (if period (/ period 1000) nil)
+            runs
+            (if end (universal-milliseconds->timestamp end) nil)
+            bindings
+            result)))
+
+(defmethod print-object ((timer timer) stream)
+  (print-unreadable-object (timer stream :type t)
+    (format stream (inspect-timer timer))))
+
+(defun make-timer (&key callback start-time period-in-seconds run-times end-time bindings (name (string (gensym "TIMER-"))))
+  "Return a timer object with CALLBACK being a function that accepts WHEEL and TIMER arguments."
+  ;; runs is the times this timer will be scheduled, if specified, the until slot will not be processed.
+  (check-type period-in-seconds (or null positive-real))
+  (check-type start-time (or null positive-real string local-time:timestamp))
+  (check-type run-times  (or null positive-fixnum))
+  (check-type end-time   (or null positive-real string local-time:timestamp))
+  (let* ((start (cond ((null start-time) nil)
+                      ((stringp start-time) (timestring->universal-milliseconds start-time))
+                      ((typep start-time 'local-time:timestamp) (timestring->universal-milliseconds start-time))
+                      (t (error "Invalid timestring: ~d" start-time))))
+         (period (if period-in-seconds
+                     (truncate (* period-in-seconds +milliseconds-per-second+))
+                     nil))
+         (runs (if period
+                   (if run-times run-times nil)
+                   (prog1 nil
+                     (when run-times
+                       (format t "~&This not a periodical timer, the RUN-TIMES <~d> will be ignored!~%" run-times)))))
+         (end (if runs
+                  (prog1 nil
+                    (when end-time
+                      (format t "END-TIME <~d> will be ignored because RUN-TIMES is specified to <~d>!~%" end-time run-times)))
+                  (cond ((null end-time) nil)
+                        ((stringp end-time) (timestring->universal-milliseconds end-time))
+                        ((typep end-time 'local-time:timestamp) (timestring->universal-milliseconds end-time))
+                        (t (error "Invalid timestring: ~d" end-time))))))
+    (when (and start end) (assert (>= end start)))
+    (make-instance 'timer
+		   :callback callback
+                   :period period
+                   :start start
+                   :runs runs
+                   :end end
+                   :bindings bindings
+                   :name name)))
 
 (defclass wheel ()
   ((context :accessor wheel-context
