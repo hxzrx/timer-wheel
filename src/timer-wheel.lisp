@@ -88,26 +88,32 @@
                    :name name)))
 
 (defclass wheel ()
-  ((context :accessor wheel-context
-	    :initarg :context)
-   (timeout-lock :accessor timeout-lock
-		 :initform (bt:make-lock))
-   (thread :accessor wheel-thread
-	   :initarg :thread
-	   :initform nil)
-   (slots :accessor slots
-	  :initarg :slots)
-   (current-slot :accessor current-slot
-		 :initform 0)
-   (resolution :reader wheel-resolution
-	       :initarg :resolution
-	       :initform *default-resolution*)
-   (reset :accessor reset
-	  :initform nil)))
+  ((context      :accessor wheel-context    :initarg :context    :initform nil)
+   (timeout-lock :accessor timeout-lock                          :initform (bt:make-lock))
+   (thread       :accessor wheel-thread     :initarg :thread     :initform nil)
+   (slots        :accessor slots            :initarg :slots      :initform nil)
+   (current-slot :accessor current-slot                          :initform 0)
+   (resolution   :reader   wheel-resolution :initarg :resolution :initform *default-resolution*)
+   (reset        :accessor reset                                 :initform nil)
+   (name         :accessor name             :initarg :name       :initform (string (gensym "WHEEL-")))))
+
+(defun inspect-wheel (wheel)
+  (with-slots (name context slots resolution reset) wheel
+    (format nil "Name: ~d, Context: ~d, Slots: ~d, Resolution: ~d, Reset: ~d"
+            name
+            context
+            (length slots)
+            resolution
+            reset)))
+
+(defmethod print-object ((wheel wheel) stream)
+  (print-unreadable-object (wheel stream :type t)
+    (format stream (inspect-wheel wheel))))
 
 (defun make-wheel (&optional
 		     (size *default-size*)
 		     (resolution *default-resolution*)
+                     (name (string (gensym "WHEEL-")))
 		     (backend :bt))
   "Make a timer wheel with SIZE slots, with a millisecond RESOLUTION,
 and BACKEND of :BT (bordeaux-threads... the only backend)."
@@ -115,7 +121,8 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
 		 :slots (make-array size :initial-element nil)
 		 :resolution resolution
 		 :context (ecase backend
-			    (:bt (make-bt-context)))))
+			    (:bt (make-bt-context)))
+                 :name name))
 
 (defgeneric install-timer (wheel timer)
   (:documentation "Add TIMER to the WHEEL schedule."))

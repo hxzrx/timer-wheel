@@ -2,8 +2,15 @@
 
 ;;; The timeout context when the backend is bordeaux-threads
 (defclass bt-timeout-context (timeout-context) ; 上下文是属于wheel的
-  ((end :accessor context-end
-	:initform nil)))
+  ((end :accessor context-end :initform nil)))
+
+(defun inspect-bt-timeout-context (context)
+  (with-slots (resolution timeout-overrun end) context
+    (format nil "Resolution: ~d, End: ~d, Timeout-Run: ~d" resolution timeout-overrun end)))
+
+(defmethod print-object ((context bt-timeout-context) stream)
+  (print-unreadable-object (context stream :type t)
+    (format stream (inspect-bt-timeout-context context))))
 
 (defun make-bt-context ()
   "Return a data structure for managing ticks with BORDEAUX-THREADS"

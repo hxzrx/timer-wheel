@@ -13,10 +13,8 @@
   "rfc3339 format")
 
 (defclass timeout-context ()
-  ((resolution :accessor context-resolution
-	       :initarg :resolution)
-   (timeout-overrun :accessor timeout-overrun
-		    :initform 0)))
+  ((resolution :accessor context-resolution :initarg :resolution :initform nil)
+   (timeout-overrun :accessor timeout-overrun :initform 0)))
 
 
 ;; utils about time
