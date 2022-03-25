@@ -5,7 +5,8 @@
 This is a fork of Nick Patrick's timer-wheel <https://github.com/npatrick04/timer-wheel> with several aspects got enhanced."
   :author "He Xiang-zhi <xz.he@qq.com>"
   :license "MIT"
-  :depends-on (#:bordeaux-threads)
+  :depends-on (#:bordeaux-threads
+               #:local-time)
   :serial t
   :components ((:module "src"
 			:components
