@@ -39,7 +39,7 @@
   time...i.e. we've missed the time getting to this thread, then increment the
   *timeout-overrun* counter, and keep going as though all was well.  I cannot
   think of any specific failure behavior that would be generically ok."
-  (let ((new-start (current-milliseconds))
+  (let ((new-start (current-universal-milliseconds))
 	(new-end (+ (context-end context)
 		    (context-resolution context))))
     (setf (context-end context) new-end)

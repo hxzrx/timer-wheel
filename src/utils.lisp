@@ -25,6 +25,9 @@
     (+ (* (local-time:timestamp-to-universal now)  +milliseconds-per-second+)
        (local-time:timestamp-millisecond now))))
 
+(defun get-current-universal-milliseconds ()
+  (current-universal-milliseconds))
+
 (defun get-local-timezone ()
   "Get time zone number of the local machine,
 plus number for the eastern time zones and minus number for the western time zones.
