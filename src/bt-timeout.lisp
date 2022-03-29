@@ -45,6 +45,7 @@
     (setf (context-end context) new-end)
     (let ((this-sleep (/ (- new-end new-start)
 			 +milliseconds-per-second+)))
+      ;;(log:info "sleep time: ~,2f seconds!" this-sleep)
       (if (minusp this-sleep)
 	  (progn
 	    ;; Document the miss and reset the timeout as though

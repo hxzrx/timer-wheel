@@ -35,7 +35,7 @@
   (print-unreadable-object (wheel stream :type t)
     (format stream (inspect-wheel wheel))))
 
-(defun make-wheel (&optional
+(defun make-wheel (&key
 		     (size *default-size*)
 		     (resolution *default-resolution*)
                      (name (string (gensym "WHEEL-")))
@@ -75,6 +75,9 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
    (scheduler      :accessor scheduler      :initarg :scheduler :initform nil)
    )
   (:documentation "
+remaining: ticks left to funcall the callback.
+installed-slot: the slot index where this timer locates in the wheel's slots.
+callback: a function which accepts two parameters: wheel and timer.
 start: the start time of the timer, universal time in milliseconds.
 period: the period for the repeatable task, and the period should be exact n-times the resolution of the attached scheduler.
         So, if scheduler is initialized, the period should be a positive integer, or nil otherwise.
@@ -158,8 +161,8 @@ scheduler: a scheduler this timer attached to, can be re-attached.
                          (setf (slot-value timer 'period) (car new-period))
                          (error "The periods of timer <~d> should be exact n-times of the resolution <~d> of the scheduler <~d>"
                                 (* period-in-ms 1000) (/ new-resolution 1000) (name new-scheduler)))))
-            (let* ((new-period (multiple-value-list (truncate (/ (* old-period +milliseconds-per-second+)
-                                                                 new-resolution)))))
+            (let* ((new-period (multiple-value-list (truncate (/ old-period new-resolution)))))
+              (log:debug "attach scheduler, new period: ~d" new-period)
               (if (= (cadr new-period) 0)
                   (setf (slot-value timer 'period) (car new-period))
                   (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
@@ -181,9 +184,9 @@ scheduler: a scheduler this timer attached to, can be re-attached.
 
 (defmethod invoke-callback :after ((wheel wheel) (timer timer))
   (decf (repeats timer))
+  (log:debug "timer: ~d~%" timer)
   (when (> (repeats timer) 0)
     (reinstall-timer wheel timer)))
-
 
 (defmethod tick ((wheel wheel))
   (let (tlist)
@@ -316,11 +319,13 @@ for valid values."
   ;; for simplicity, if delay-seconds specified, the start timer of the timer will not take effect.
   (assert (or (null delay-seconds)
               (and (realp delay-seconds) (> delay-seconds 0))))
+  (assert (> (slot-value timer 'repeats) 0))
   (let ((calculated-timeout  (if delay-seconds
                                  (truncate (/ (* +milliseconds-per-second+ delay-seconds)
                                               (wheel-resolution wheel)))
                                  (calculate-slot-index wheel timer))))
-    (setf (remaining timer) (max 1 calculated-timeout))
+    (setf (remaining timer) (max 1 calculated-timeout)
+          (scheduled-p timer) t)
     (install-timer wheel timer)))
 
 (defun initialize-timer-wheel (wheel)
@@ -335,7 +340,7 @@ context, and start the WHEEL thread."
 	   (manage-timer-wheel wheel))
 	 :name "timer-wheel")))
 
-(defun manage-timer-wheel (wheel)
+(defun manage-timer-wheel (wheel) ; 在其中进行wheel初始化判断
   "This is the main entry point of the timer WHEEL thread."
   (loop (wait-for-timeout (wheel-context wheel)) ; 先调用wait-for-timeout是为了校准时间
         (when (reset wheel)
@@ -365,3 +370,5 @@ clean up by shutting WHEEL down after leaving the scope."
 	  (initialize-timer-wheel ,wheel)
 	  ,@body)
      (shutdown-timer-wheel ,wheel)))
+
+(defparameter *default-wheel* (make-wheel :name "DEFAULT-WHEEL"))

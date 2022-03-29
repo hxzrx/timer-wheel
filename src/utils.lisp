@@ -2,6 +2,8 @@
 
 (defconstant +milliseconds-per-second+ 1000)
 
+(log:debug :debug)
+
 (deftype positive-real ()
   '(real (0) *))
 

@@ -6,7 +6,8 @@ This is a fork of Nick Patrick's timer-wheel <https://github.com/npatrick04/time
   :author "He Xiang-zhi <xz.he@qq.com>"
   :license "MIT"
   :depends-on (#:bordeaux-threads
-               #:local-time)
+               #:local-time
+               #:log4cl)
   :serial t
   :components ((:module "src"
 			:components
