@@ -7,5 +7,7 @@
   :components ((:module "test"
 			:components
 			((:file "package")
-			 (:file "test"))))
+			 (:file "utils")
+                         (:file "timeout")
+                         (:file "timer-wheel"))))
   :perform (test-op (o s) (uiop:symbol-call :parachute :test :timer-wheel-tests)))
