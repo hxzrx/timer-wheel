@@ -16,6 +16,7 @@
     (true (<= (- now2 now0) 1))
     (true (<= (- now2 now1) 1))))
 
+#+gmt+8
 (define-test get-local-timezone :parent utils
   (is = 8 (tw::get-local-timezone)))
 
@@ -44,11 +45,21 @@
     (finish (tw::timestamp->universal-milliseconds now1))
     (true (<= (- now2 (tw::timestamp->universal-milliseconds now1)) 1))))
 
-(define-test timestring->universal-milliseconds :parent utils
+(define-test timestring->universal-milliseconds-1 :parent utils
   (let* ((now-ms (tw::get-current-universal-milliseconds))
          (timestamp (tw::universal-milliseconds->timestamp now-ms))
          (timestring (tw::timestamp->timestring timestamp)))
     (is = now-ms (tw::timestring->universal-milliseconds timestring))))
+
+(define-test timestring->universal-milliseconds-2 :parent utils
+  ;; will pass only in GMT+8
+  (let ((ts1 "2022-03-24 16:28:00")
+        (ts2 "2022-03-24T16:28:00")
+        (ts3 "2022-03-24T16:28:00+08:00")
+        (ts4 "2022-03-24T16:28:00.000000+08:00"))
+    (is = (tw::timestring->universal-milliseconds ts1) (tw::timestring->universal-milliseconds ts2))
+    #+gmt+8(is = (tw::timestring->universal-milliseconds ts1) (tw::timestring->universal-milliseconds ts3))
+    #+gmt+8(is = (tw::timestring->universal-milliseconds ts1) (tw::timestring->universal-milliseconds ts4))))
 
 (define-test timestamp->universal-milliseconds :parent utils
   (let* ((timestamp (local-time:now))
