@@ -9,5 +9,5 @@
 (define-test timer-wheel-tests)
 
 (define-test utils       :parent timer-wheel-tests)
-(define-test timeout  :parent timer-wheel-tests)
+(define-test timeout     :parent timer-wheel-tests)
 (define-test timer-wheel :parent timer-wheel-tests)
