@@ -21,14 +21,17 @@
 
 ;; utils about time
 
-(defun current-universal-milliseconds ()
-  "Get the universal time, in millisecond"
-  (let ((now (local-time:now)))
-    (+ (* (local-time:timestamp-to-universal now)  +milliseconds-per-second+)
-       (local-time:timestamp-millisecond now))))
-
+(declaim (inline current-universal-milliseconds))
 (defun get-current-universal-milliseconds ()
-  (current-universal-milliseconds))
+  "Get the universal time, in millisecond"
+  (multiple-value-bind (sec nsec) (local-time::%get-current-time)
+    (+ (* (+ sec (encode-universal-time 0 0 0 1 1 1970 0))
+          +milliseconds-per-second+)
+       (truncate (/ nsec 1000000)))))
+
+(declaim (inline get-current-universal-milliseconds))
+(defun current-universal-milliseconds ()
+  (get-current-universal-milliseconds))
 
 (defun get-local-timezone ()
   "Get time zone number of the local machine,
