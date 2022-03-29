@@ -9,14 +9,14 @@
     (format nil "Resolution: ~d, End: ~d, Timeout-Run: ~d" resolution timeout-overrun end)))
 
 (defmethod print-object ((context bt-timeout-context) stream)
-  (print-unreadable-object (context stream :type t)
+  (print-unreadable-object (context stream :type t :identity t)
     (format stream (inspect-bt-timeout-context context))))
 
 (defun make-bt-context ()
   "Return a data structure for managing ticks with BORDEAUX-THREADS"
   (make-instance 'bt-timeout-context))
 
-(defun current-milliseconds ()
+(defun current-milliseconds () ; wall time has been utilized and this function is deposited
   "Utility function to get the current time in milliseconds."
   (declare (optimize speed))
   (* (get-internal-real-time) ; 注意不是外界ut时间, 而是从系统启动至今的累计时间
@@ -31,7 +31,7 @@
 	(context-end context) (current-milliseconds)))
 
 (defun shutdown-context (context)
-  )
+  (declare (ignore context)))
 
 (defun wait-for-timeout (context)
   "This thread maintains a continually updating real-time that it is targetting
@@ -52,7 +52,6 @@
 	    ;; we just ended a perfect sleep.
 	    (incf (timeout-overrun context)) ; 实际上overrun在本库中并没有其它作用, 可能用于其它的监控
 	    (setf (context-end context) new-start))
-
 	  ;; At least some amount to sleep, so do it.
 	  (sleep this-sleep))
       #+nil

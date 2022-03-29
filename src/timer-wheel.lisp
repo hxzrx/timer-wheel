@@ -32,7 +32,7 @@
             reset)))
 
 (defmethod print-object ((wheel wheel) stream)
-  (print-unreadable-object (wheel stream :type t)
+  (print-unreadable-object (wheel stream :type t :identity t)
     (format stream (inspect-wheel wheel))))
 
 (defun make-wheel (&key
@@ -102,7 +102,7 @@ scheduler: a scheduler this timer attached to, can be re-attached.
             scheduler)))
 
 (defmethod print-object ((timer timer) stream)
-  (print-unreadable-object (timer stream :type t)
+  (print-unreadable-object (timer stream :type t :identity t)
     (format stream (inspect-timer timer))))
 
 (defun make-timer (&key callback scheduler start-time period-in-seconds (repeat-times 1) end-time bindings (name (string (gensym "TIMER-"))))
