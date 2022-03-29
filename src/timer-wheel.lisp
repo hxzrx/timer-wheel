@@ -7,6 +7,7 @@
 (defparameter *default-resolution* 100 "milliseconds")
 (defparameter *default-size* 100 "slots per wheel")
 
+
 (define-condition unscheduled (error)
   ((timer :initarg :timer
 	  :reader unscheduled-timer)))
@@ -35,8 +36,7 @@
   (print-unreadable-object (wheel stream :type t :identity t)
     (format stream (inspect-wheel wheel))))
 
-(defun make-wheel (&key
-		     (size *default-size*)
+(defun make-wheel (&key (size *default-size*)
 		     (resolution *default-resolution*)
                      (name (string (gensym "WHEEL-")))
 		     (backend :bt))
@@ -111,13 +111,13 @@ scheduler: a scheduler this timer attached to, can be re-attached.
   ;; all slots will be set to reduce calculating in scheduling
   ;; start will be update in schedul-timer if delay-seconds specified
   (check-type period-in-seconds (or null positive-real))
-  (check-type start-time    (or null positive-real string local-time:timestamp))
+  (check-type start-time    (or null positive-fixnum string local-time:timestamp)) ; may allow universal time in the future
   (check-type repeat-times  (or null positive-fixnum))
-  (check-type end-time      (or null positive-real string local-time:timestamp))
+  (check-type end-time      (or null positive-fixnum string local-time:timestamp))
   (let* ((start (cond ((null start-time) (get-current-universal-milliseconds)) ; nil will shedule immediately
                       ((stringp start-time) (timestring->universal-milliseconds start-time))
-                      ((typep start-time 'local-time:timestamp) (timestring->universal-milliseconds start-time))
-                      (t (error "Invalid timestring: ~d" start-time))))
+                      ((typep start-time 'local-time:timestamp) (timestamp->universal-milliseconds start-time))
+                      (t (error "Invalid start-time: ~d" start-time))))
          (period (if period-in-seconds
                      (if scheduler
                          (progn
@@ -133,8 +133,8 @@ scheduler: a scheduler this timer attached to, can be re-attached.
          (repeats (if repeat-times repeat-times most-positive-fixnum))
          (end (cond ((null end-time) nil)
                     ((stringp end-time) (timestring->universal-milliseconds end-time))
-                    ((typep end-time 'local-time:timestamp) (timestring->universal-milliseconds end-time))
-                    (t (error "Invalid timestring: ~d" end-time)))))
+                    ((typep end-time 'local-time:timestamp) (timestamp->universal-milliseconds end-time))
+                    (t (error "Invalid end-time: ~d" end-time)))))
     (when (and start end) (assert (>= end start)))
     (make-instance 'timer
 		   :callback callback
