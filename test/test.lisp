@@ -1,5 +1,7 @@
-(in-package #:timer-wheel.test)
+(in-package #:timer-wheel-tests)
 
+
+#+:ignore
 (test scheduling
   (let ((wheel (make-wheel))
 	(timer (make-timer (lambda (whl tmr)

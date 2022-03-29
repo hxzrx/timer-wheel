@@ -9,6 +9,7 @@ This is a fork of Nick Patrick's timer-wheel <https://github.com/npatrick04/time
                #:local-time
                #:log4cl)
   :serial t
+  :in-order-to ((test-op (test-op "timer-wheel.test")))
   :components ((:module "src"
 			:components
 			((:file "package")

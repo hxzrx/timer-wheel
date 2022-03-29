@@ -1,10 +1,11 @@
 (asdf:defsystem #:timer-wheel.test
   :description "Tests for timer-wheel."
-  :author "Nick Patrick <npatrick04@gmail.com>"
+  :author "He Xiang-zhi <xz.he@qq.com>"
   :license "MIT"
-  :depends-on (#:bordeaux-threads #:fiveam)
+  :depends-on (#:timer-wheel #:parachute #:log4cl)
   :serial t
   :components ((:module "test"
 			:components
 			((:file "package")
-			 (:file "test")))))
+			 (:file "test"))))
+  :perform (test-op (o s) (uiop:symbol-call :parachute :test :timer-wheel-tests)))

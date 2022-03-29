@@ -1,2 +1,2 @@
-(defpackage #:timer-wheel.test
-  (:use #:cl #:tw #:fiveam))
+(defpackage #:timer-wheel-tests
+  (:use #:cl #:timer-wheel #:parachute))
