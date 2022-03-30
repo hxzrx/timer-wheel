@@ -55,16 +55,11 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
    (installed-slot :accessor installed-slot :initform nil)      ; 本timer处于wheel哪个时间滴答
    (callback       :accessor callback       :initarg :callback) ; 回调参数用于任务的重复调用
    (result         :accessor result         :initarg :result    :initform nil)   ; 给回调函数一个设置结果的可能, 一般不需要使用
-   ;;(fn             :accessor fn             :initarg :fn      :initform nil) ; used to replace callback, callback is better
-   ;; the timer has many slots now,
-   ;;(args           :accessor args           :initarg :args    :initform nil) ; fn's argument list
-   ;;(wheel          :accessor wheel          :initarg :wheel   :initform nil)
-   ;;(itself         :accessor itself         :initarg :itself  :initform nil)
    (scheduled-p    :accessor scheduled-p    :initform nil)     ; 已调度为T, 否则NIL
    ;; 考虑是否有这种任务, 超时后就不再运行: 在调度时先设置超时槽位, 在荷载函数内实现是否运行.
    (timeout-p      :accessor timeout-p      :initform nil)     ; 默认NIL, 若运行时已超时则置为T.
    ;; 状态: 取消, 错误(用于记录未捕捉到的错误, 考虑是否有必要), 等待(不需要这个状态), 已运行, 超时, 完成(不需要, 调度器也不知道)
-   (status         :accessor status         :initarg :status    :initform nil)
+   (status         :accessor status         :initarg :status    :initform :ok)
    (bindings       :accessor bindings       :initarg :bindings  :initform nil)
    (start          :accessor start          :initarg :start     :initform nil) ; start time of this work, in universal milliseconds
    ;; the 3 slots below are used for periodical timer
@@ -78,12 +73,20 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
 remaining: ticks left to funcall the callback.
 installed-slot: the slot index where this timer locates in the wheel's slots.
 callback: a function which accepts two parameters: wheel and timer.
-start: the start time of the timer, universal time in milliseconds.
+start: the start time of the timer, will convert to universal time in milliseconds in make-timer.
 period: the period for the repeatable task, and the period should be exact n-times the resolution of the attached scheduler.
-        So, if scheduler is initialized, the period should be a positive integer, or nil otherwise.
-end: the end time of the timer, universal time in milliseconds, for the unbound periodical tasks,
-     this will initialized to a big integer.
+        So, if scheduler is initialized, the period should be a positive integer for periodical tasks,
+        or nil for non-periodical tasks.
+end: the end time of the timer, will convert to universal time in milliseconds in make-timer.
+     for those unbound periodical tasks, this will initialized to a most-positive-fixnum.
 scheduler: a scheduler this timer attached to, can be re-attached.
+result: sometimes one need the returned value of the callback function,
+        and this slot provide a clumsy way to store the value,
+        one should set this slot-value manually within the callback's function body.
+scheduled-p: if it's been scheduled, this slot will be set to T.
+timeout-p: T shows that is has a timeout when it got ran, NOT in use currently.
+status: default :OK, but when a timer is uninstalled, the status will be set to :canceled.
+bindings: specials bindings, may be useful in threads, NOT in use currently.
 "))
 
 (defun inspect-timer (timer)
@@ -105,8 +108,28 @@ scheduler: a scheduler this timer attached to, can be re-attached.
   (print-unreadable-object (timer stream :type t :identity t)
     (format stream (inspect-timer timer))))
 
-(defun make-timer (&key callback scheduler start-time period-in-seconds (repeat-times 1) end-time bindings (name (string (gensym "TIMER-"))))
-  "Return a timer object with CALLBACK being a function that accepts WHEEL and TIMER arguments."
+(defun make-timer (&key callback scheduler start-time end-time (repeat-times 1 repeat-times-supplied-p)
+                     period-in-seconds bindings (name (string (gensym "TIMER-"))))
+  "Return a new timer object.
+callback: a function that accepts WHEEL and TIMER arguments.
+scheduler: a wheel instance this new timer will attach to.
+start-time: the earliest time this timer begins to run (not schedule),
+            start-time accept 3 types of data:
+            1. nil, will schedule immediately;
+            2. string, a timestring which can be convert to a universal time, with the machine's timezone if not specified.
+               eg. 2022-03-24 16:28:00, 2022-03-24T16:28:00.000+08:00;
+            3. an instance of local-time:timestamp.
+repeat-times: The times the timer will run, and 1 for non-periodical timer,
+              The slot-value will decf by 1 after each run and stop when it get down to 0.
+              If repeat-times is not supplied but period-in-seconds is supplied, repeats will try to be inferred.
+period-in-seconds: This is the interval value for the periodical timer, and nil for the non-periodical timer.
+                   But if scheduler is specified, it will convert to the time ticks with respect to the sceduler's resolution.
+                   If scheduler is not specified, it will convert to milliseconds and stored in the period slot also.
+                   Note that the timer's period in milliseconds should be a common multiple of the resolution of the scheduler,
+                     or else an error will be signaled.
+                   If repeat-times >= 2, and period-in-seconds is not supplied,
+                     the period will be inferenced from start, end, and repeats.
+"
   ;; repeat will always have a positive fixnum value, but the real repeat times will also be constrained by wheel's resolution.
   ;; all slots will be set to reduce calculating in scheduling
   ;; start will be update in schedul-timer if delay-seconds specified
@@ -114,27 +137,41 @@ scheduler: a scheduler this timer attached to, can be re-attached.
   (check-type start-time    (or null positive-fixnum string local-time:timestamp)) ; may allow universal time in the future
   (check-type repeat-times  (or null positive-fixnum))
   (check-type end-time      (or null positive-fixnum string local-time:timestamp))
-  (let* ((start (cond ((null start-time) (get-current-universal-milliseconds)) ; nil will shedule immediately
+  (let* ((start (cond ((null start-time) (get-current-universal-milliseconds)) ; nil will schedule immediately
                       ((stringp start-time) (timestring->universal-milliseconds start-time))
                       ((typep start-time 'local-time:timestamp) (timestamp->universal-milliseconds start-time))
                       (t (error "Invalid start-time: ~d" start-time))))
-         (period (if period-in-seconds
-                     (if scheduler
-                         (progn
-                           (let* ((resolution (wheel-resolution scheduler))
-                                  (period (multiple-value-list (truncate (/ (* period-in-seconds +milliseconds-per-second+)
-                                                                             resolution)))))
-                             (if (= (cadr period) 0)
-                                 (car period)
-                                 (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
-                                        period-in-seconds (/ resolution 1000)))))
-                         (* period-in-seconds +milliseconds-per-second+))
-                     nil)) ; if period is nil, repeats and end will not take effects
-         (repeats (if repeat-times repeat-times most-positive-fixnum))
          (end (cond ((null end-time) nil)
                     ((stringp end-time) (timestring->universal-milliseconds end-time))
                     ((typep end-time 'local-time:timestamp) (timestamp->universal-milliseconds end-time))
-                    (t (error "Invalid end-time: ~d" end-time)))))
+                    (t (error "Invalid end-time: ~d" end-time))))
+         (repeats (if repeat-times-supplied-p
+                      repeat-times
+                      (if (and end-time period-in-seconds) ; inference the repeats
+                          (round (- end start) (* period-in-seconds +milliseconds-per-second+))
+                          (if (and (null end-time) period-in-seconds)
+                              most-positive-fixnum ; null end-time with period
+                              1 ; end-time without period, or null end-time without period
+                              ))))
+         (period (if period-in-seconds ; if period specified explicitly
+                     (if scheduler
+                         (let* ((resolution (wheel-resolution scheduler))
+                                (period (multiple-value-list (truncate (/ (* period-in-seconds +milliseconds-per-second+)
+                                                                          resolution)))))
+                           (if (= (cadr period) 0)
+                               (car period)
+                               (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
+                                      period-in-seconds (/ resolution 1000))))
+                         (* period-in-seconds +milliseconds-per-second+))
+                     (if (and scheduler end-time (> repeat-times 1)) ; inference the period
+                         (let* ((resolution (wheel-resolution scheduler))
+                                (inferred-period-in-ms (/ (- end start) repeat-times))
+                                (period (multiple-value-list (truncate (/ inferred-period-in-ms resolution)))))
+                           (if (= (cadr period) 0)
+                               (car period)
+                               (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
+                                      period-in-seconds (/ resolution 1000))))
+                         nil))))
     (when (and start end) (assert (>= end start)))
     (make-instance 'timer
 		   :callback callback
@@ -170,6 +207,13 @@ scheduler: a scheduler this timer attached to, can be re-attached.
   (setf (slot-value timer 'scheduler) new-scheduler)
   timer)
 
+(defmethod get-real-period ((timer timer))
+  "Return the timers period in milliseconds."
+  (with-slots (period scheduler) timer
+    (when period
+      (if scheduler
+          (* period (wheel-resolution scheduler))
+          period))))
 
 (defgeneric install-timer (wheel timer)
   (:documentation "Add TIMER to the WHEEL schedule."))
@@ -197,10 +241,11 @@ scheduler: a scheduler this timer attached to, can be re-attached.
       (rotatef tlist (elt (slots wheel) (current-slot wheel)))) ; 交换tlist和当前槽位内容, 交换后对应槽位为空
     ;; Then run the timers outside the lock
     (dolist (timer tlist)
-      (if (zerop (remaining timer))
-	  ;;(funcall (callback timer) wheel timer) ; 计时器剩余事件为零就执行回调
-          (funcall (invoke-callback wheel timer))
-	  (install-timer wheel timer)))))        ; 否则重新安装计时器.
+      (when (eq :ok (status timer)) ; currently only 2 status, :ok and :canceled
+        (if (zerop (remaining timer))
+	    ;;(funcall (callback timer) wheel timer) ; 计时器剩余事件为零就执行回调
+            (funcall (invoke-callback wheel timer))
+	    (install-timer wheel timer))))))        ; 否则重新安装计时器.
 
 (defun calculate-future-slot (current-slot remaining slots)
   (mod (+ current-slot (max 1 remaining )) ;minimum resolution of 1 tick , 最小为1是为了防止立即要执行的任务被安排到下一个周期.
@@ -214,6 +259,7 @@ scheduler: a scheduler this timer attached to, can be re-attached.
 (defmethod install-timer ((wheel wheel) (timer timer))
   "根据timer的remaining值, 计算这个timer落在slots的哪个位置,
 如果在一个时轮周期内会执行到这个timer, 就精确计算其位置, 否则将其放到当前位置."
+  (log:debug "timer scheduled-p: ~d" (scheduled-p timer))
   (unless (scheduled-p timer)
     (error 'unscheduled :timer timer))
   (let ((max-wheel-ticks (length (slots wheel))))
@@ -223,6 +269,7 @@ scheduler: a scheduler this timer attached to, can be re-attached.
 			      (current-slot wheel)
 			      (remaining timer)
 			      (length (slots wheel)))))
+            (log:info "current-slot: ~d, future-slot: ~d" (current-slot wheel) future-slot)
 	    (setf (remaining timer) 0                ; 将剩余时间设置为0, 表示下次轮到对应滴答就执行此计时器.
 		  (installed-slot timer) future-slot ; 设置计时器的槽位
 		  ;; Install the timer at the end of the list
@@ -241,7 +288,9 @@ scheduler: a scheduler this timer attached to, can be re-attached.
     t))
 
 (defmethod reinstall-timer ((wheel wheel) (timer timer))
-  (setf (slot-value timer 'remaining) (period timer))
+  (setf (slot-value timer 'remaining) (period timer)
+        (slot-value timer 'status) :ok
+        (slot-value timer 'schedule-p) t)
   (let ((max-wheel-ticks (length (slots wheel))))
     (if (< (remaining timer) max-wheel-ticks) ; 表示在一个时轮周期内能执行的任务
         (bt:with-lock-held ((timeout-lock wheel)) ; 注意这里加了锁
@@ -267,7 +316,11 @@ scheduler: a scheduler this timer attached to, can be re-attached.
     t))
 
 (defmethod uninstall-timer ((wheel wheel) (timer timer)) ; 本方法可以进一步优化, 只需将计时任务设置一个状态以标识是否取消
-  (when (installed-slot timer)
+  (setf (slot-value timer 'status) :canceled
+        (slot-value timer 'scheduled-p) nil
+        (slot-value timer 'remaining) nil
+        (slot-value timer 'installed-slot) nil)
+  #+:ignore(when (installed-slot timer)
     (bt:with-lock-held ((timeout-lock wheel))
       ;; Check again in case something else already uninstalled the timer.
       (when (installed-slot timer)
@@ -324,8 +377,9 @@ for valid values."
                                  (truncate (/ (* +milliseconds-per-second+ delay-seconds)
                                               (wheel-resolution wheel)))
                                  (calculate-slot-index wheel timer))))
-    (setf (remaining timer) (max 1 calculated-timeout)
-          (scheduled-p timer) t)
+    (log:info "delay: ~f, calculated-timeout: ~d" delay-seconds calculated-timeout)
+    (setf (slot-value timer 'remaining) (max 1 calculated-timeout)
+          (slot-value timer 'scheduled-p) t)
     (install-timer wheel timer)))
 
 (defun initialize-timer-wheel (wheel)
@@ -370,5 +424,3 @@ clean up by shutting WHEEL down after leaving the scope."
 	  (initialize-timer-wheel ,wheel)
 	  ,@body)
      (shutdown-timer-wheel ,wheel)))
-
-(defparameter *default-wheel* (make-wheel :name "DEFAULT-WHEEL"))
