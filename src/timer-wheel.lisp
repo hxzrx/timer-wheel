@@ -53,25 +53,21 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
                  :name name))
 
 
-(defclass timer () ; 计时器包含三个槽位: 剩余时间, 所属时轮槽位索引, 回调函数
+(defclass timer ()
   ((remaining      :accessor remaining      :initarg :remaining  :initform nil)
-   (installed-slot :accessor installed-slot :initform nil)      ; 本timer处于wheel哪个时间滴答
-   (callback       :accessor callback       :initarg :callback) ; 回调参数用于任务的重复调用
-   (result         :accessor result         :initarg :result    :initform nil)   ; 给回调函数一个设置结果的可能, 一般不需要使用
-   (scheduled-p    :accessor scheduled-p    :initform nil)     ; 已调度为T, 否则NIL
-   ;; 考虑是否有这种任务, 超时后就不再运行: 在调度时先设置超时槽位, 在荷载函数内实现是否运行.
-   (timeout-p      :accessor timeout-p      :initform nil)     ; 默认NIL, 若运行时已超时则置为T.
-   ;; 状态: 取消, 错误(用于记录未捕捉到的错误, 考虑是否有必要), 等待(不需要这个状态), 已运行, 超时, 完成(不需要, 调度器也不知道)
+   (installed-slot :accessor installed-slot :initform nil)
+   (callback       :accessor callback       :initarg :callback)
+   (result         :accessor result         :initarg :result    :initform nil)
+   (scheduled-p    :accessor scheduled-p    :initform nil)
+   (timeout-p      :accessor timeout-p      :initform nil)
    (status         :accessor status         :initarg :status    :initform :ok)
    (bindings       :accessor bindings       :initarg :bindings  :initform nil)
-   (start          :accessor start          :initarg :start     :initform nil) ; start time of this work, in universal milliseconds
-   ;; the 3 slots below are used for periodical timer
-   (period         :accessor period         :initarg :period    :initform nil) ; period in ticks, nil for non-periodical timer
-   (repeats        :accessor repeats        :initarg :repeats   :initform 1)   ; will be scheduled how many times
-   (end            :accessor end            :initarg :end       :initform nil) ; end time of this work, in universal milliseconds
+   (start          :accessor start          :initarg :start     :initform nil)
+   (end            :accessor end            :initarg :end       :initform nil)
+   (period         :accessor period         :initarg :period    :initform nil)
+   (repeats        :accessor repeats        :initarg :repeats   :initform 1)
    (name           :accessor name           :initarg :name      :initform (string (gensym "TIMER-")))
-   (scheduler      :accessor scheduler      :initarg :scheduler :initform nil)
-   )
+   (scheduler      :accessor scheduler      :initarg :scheduler :initform nil))
   (:documentation "
 remaining: ticks left to funcall the callback.
 installed-slot: the slot index where this timer locates in the wheel's slots.
@@ -136,11 +132,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                    Note that the timer's period in milliseconds should be a common multiple of the resolution of the scheduler,
                      or else an error will be signaled.
                    If repeat-times >= 2, and period-in-seconds is not supplied,
-                     the period will be inferenced from start, end, and repeats.
-"
-  ;; repeat will always have a positive fixnum value, but the real repeat times will also be constrained by wheel's resolution.
-  ;; all slots will be set to reduce calculating in scheduling
-  ;; start will be update in schedul-timer if delay-seconds specified
+                     the period will be inferenced from start, end, and repeats."
   (check-type period-in-seconds (or null positive-real))
   (check-type start-time    (or null positive-fixnum string local-time:timestamp)) ; may allow universal time in the future
   (check-type repeat-times  (or null positive-fixnum))
@@ -173,7 +165,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                                (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
                                       period-in-seconds (/ resolution 1000))))
                          (* period-in-seconds +milliseconds-per-second+))
-                     (if (and scheduler end-time (> repeat-times 1)) ; inference the period
+                     (if (and scheduler end-time repeat-times (> repeat-times 1)) ; inference the period
                          (let* ((resolution (wheel-resolution scheduler))
                                 (inferred-period-in-ms (/ (- end start) repeat-times))
                                 (period (multiple-value-list (truncate (/ inferred-period-in-ms resolution)))))
@@ -181,7 +173,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                                (car period)
                                (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
                                       period-in-seconds (/ resolution 1000))))
-                         (if (and end-time (> repeat-times 1))
+                         (if (and end-time repeat-times (> repeat-times 1))
                              (/ (- end start) repeat-times) ; can only infer physic time period
                              nil)
                          ))))
@@ -257,7 +249,7 @@ so every timers enqueued should make sure they have repeats greater than zero."
     (bt:with-lock-held ((timeout-lock wheel)) ; locked so that no timer will be enqueued
       (setf (current-slot wheel) (mod (1+ (current-slot wheel))
 				      (length (slots wheel))))
-      (rotatef tlist (elt (slots wheel) (current-slot wheel))))
+      (rotatef tlist (svref (slots wheel) (current-slot wheel))))
     ;; Then run the timers outside the lock
     (dolist (timer tlist)
       (when (eq :ok (status timer)) ; currently only 2 status, :ok and :canceled
@@ -293,15 +285,15 @@ else enqueue the timer to the current slot."
 		  ;; Install the timer at the end of the list
 		  ;; This ensures that timer evaluation order is FIFO.
 		  ;; TODO: Actually use a FIFO instead of a list
-		  (elt (slots wheel) future-slot)    ; use svref to speedup the accessing
-		  (append (elt (slots wheel) future-slot) ; append相当于对fifo队列的enqueue操作
+		  (svref (slots wheel) future-slot)    ; use svref to speedup the accessing
+		  (append (svref (slots wheel) future-slot) ; append相当于对fifo队列的enqueue操作
 			  (list timer)))
 	    ;; (push timer (elt (slots wheel) future-slot))
 	    ))
 	;; The timer needs to be reinstalled later
         ;; 为何没加锁?? 如果在其它线程执行本函数可能会有竞争
 	(progn (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
-	       (push timer (elt (slots wheel) (current-slot wheel))) ; enqueue the timer to the current slot
+	       (push timer (svref (slots wheel) (current-slot wheel))) ; enqueue the timer to the current slot
 	       (setf (installed-slot timer) (current-slot wheel))))  ; the accurate will be re-caculated in the future
     t))
 
@@ -322,14 +314,14 @@ else enqueue the timer to the current slot."
                   ;; Install the timer at the end of the list
                   ;; This ensures that timer evaluation order is FIFO.
                   ;; TODO: Actually use a FIFO instead of a list
-                  (elt (slots wheel) future-slot)
-                  (append (elt (slots wheel) future-slot)
+                  (svref (slots wheel) future-slot)
+                  (append (svref (slots wheel) future-slot)
                           (list timer)))
             ;; (push timer (elt (slots wheel) future-slot))
             ))
         ;; The timer needs to be reinstalled later
         (progn (decf (remaining timer) max-wheel-ticks)
-               (push timer (elt (slots wheel) (current-slot wheel)))
+               (push timer (svref (slots wheel) (current-slot wheel)))
                (setf (installed-slot timer) (current-slot wheel))))
     t))
 

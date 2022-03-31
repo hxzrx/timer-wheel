@@ -288,7 +288,8 @@
     (is = 0 (- (tw::start timer1) start-ms))
     (is = end-ms (tw::end timer0))
     (is = end-ms (tw::end timer1))
-    (is eq nil (tw::period timer0)) ; no schedule, cannot be inferred
+    (format t "timer0: ~d~%" timer0)
+    (is eq 6000 (tw::period timer0)) ; no schedule, inferred physic milliseconds
     (is eq 60 (tw::period timer1))  ; inferred
     (is = 10 (tw::repeats timer0))
     (is = 10 (tw::repeats timer1))
