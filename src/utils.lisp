@@ -84,3 +84,40 @@ See the examples below."
   "Convert a universal time (in milliseconds) to a timestamp object."
   (multiple-value-bind (sec msec) (floor universal 1000)
     (local-time:universal-to-timestamp sec :nsec (* msec 1000000))))
+
+(defmacro when-let (bindings &body forms)
+  "alexandria/alexandria-1/binding.lisp
+BINDINGS must be either single binding of the form:
+ (variable initial-form)
+or a list of bindings of the form:
+ ((variable-1 initial-form-1)
+  (variable-2 initial-form-2)
+  ...
+  (variable-n initial-form-n))
+"
+  (let* ((binding-list (if (and (consp bindings) (symbolp (car bindings)))
+                           (list bindings)
+                           bindings))
+         (variables (mapcar #'car binding-list)))
+    `(let ,binding-list
+       (when (and ,@variables)
+         ,@forms))))
+
+(defmacro if-let (bindings &body (then-form &optional else-form))
+  "alexandria/alexandria-1/binding.lisp
+BINDINGS must be either single binding of the form:
+ (variable initial-form)
+or a list of bindings of the form:
+ ((variable-1 initial-form-1)
+  (variable-2 initial-form-2)
+  ...
+  (variable-n initial-form-n))
+"
+  (let* ((binding-list (if (and (consp bindings) (symbolp (car bindings)))
+                           (list bindings)
+                           bindings))
+         (variables (mapcar #'car binding-list)))
+    `(let ,binding-list
+       (if (and ,@variables)
+           ,then-form
+           ,else-form))))
