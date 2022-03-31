@@ -1,5 +1,6 @@
 (in-package :timer-wheel-tests)
 
+
 (defparameter *test-wheel* (tw::make-wheel :size 10 :resolution 10 :name "TEST-WHEEL"))
 
 (define-test make-wheel :parent timer-wheel
@@ -58,7 +59,7 @@
   (fail   (tw::make-timer :repeat-times 0))
   (fail   (tw::make-timer :repeat-times 0.5))
   (finish (tw::make-timer :repeat-times 1))
-  (finish (tw::make-timer :repeat-times 2))
+  (fail   (tw::make-timer :repeat-times 2))
   (finish (tw::make-timer :repeat-times nil))
   (finish (tw::make-timer :end-time nil))
   (finish (tw::make-timer :end-time "2099-03-24 16:28:00"))
@@ -104,10 +105,10 @@
     (finish (tw::make-timer :start-time nil :end-time "2099-03-25 16:28:01"))
     (finish (tw::make-timer :start-time (local-time:now) :end-time nil))
     (finish (tw::make-timer :start-time (local-time:now) :repeat-times 1))
-    (finish (tw::make-timer :start-time (local-time:now) :repeat-times 2))
+    (fail   (tw::make-timer :start-time (local-time:now) :repeat-times 2))
     (finish (tw::make-timer :start-time (local-time:now) :repeat-times nil)) ; repeat most-positive-fixnum
     (finish (tw::make-timer :start-time "2022-03-25 16:28:00" :repeat-times 1))
-    (finish (tw::make-timer :start-time "2022-03-25 16:28:00" :repeat-times 2))
+    (fail   (tw::make-timer :start-time "2022-03-25 16:28:00" :repeat-times 2))
     (finish (tw::make-timer :start-time "2022-03-25 16:28:00" :repeat-times nil))
     (finish (tw::make-timer :start-time "2022-03-25 16:28:00" :period-in-seconds 0.01))
     (finish (tw::make-timer :start-time "2022-03-25 16:28:00" :period-in-seconds 0.1))
@@ -133,15 +134,268 @@
     (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :end-time "2022-03-25 16:28:00"))
     (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :end-time (local-time:now)))
     (fail   (tw::make-timer :scheduler wheel :start-time (local-time:now)      :end-time "2022-03-25 16:28:00"))
-    (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :repeat-times 2))
+    (fail   (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :repeat-times 2))
     (fail   (tw::make-timer :scheduler wheel :end-time   "2022-03-25 16:28:00" :repeat-times 2))
     (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :period-in-seconds 0.01))
     (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :period-in-seconds 0.1))
     (finish (tw::make-timer :scheduler wheel :start-time nil                   :period-in-seconds 0.01))
     (fail   (tw::make-timer :scheduler wheel :start-time nil                   :period-in-seconds 0.005))
     (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :period-in-seconds 0.01 :repeat-times 2))
-    (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :end-time (local-time:now)
+    (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :end-time   "2099-03-25 17:28:00"
                             :period-in-seconds 0.01 :repeat-times 2))
+    (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :end-time "2099-03-25 17:28:00"
+                            :period-in-seconds 0.01))
+    (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :end-time "2099-03-25 17:28:00"
+                            :repeat-times 100))
+    (finish (tw::make-timer :scheduler wheel :start-time "2022-03-25 16:28:00" :end-time "2022-03-26 16:28:00"
+                            :period-in-seconds 0.01 :repeat-times 2))
+    ))
+
+;;; the following make-timer-checking-x tests check timer slots with the args provided in make-timer.
+;;; one timer instance supplies scheduler and another timer instance does not.
+
+;; none parameters provided
+(define-test make-timer-checking-1 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (timer0 (tw::make-timer :callback cb))
+         (timer1 (tw::make-timer :callback cb :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (true (< (abs (- (tw::start timer0) now-ms)) 10))
+    (true (< (abs (- (tw::start timer1) now-ms)) 10))
+    (is eq nil (tw::end timer0))
+    (is eq nil (tw::end timer1))
+    (is eq nil (tw::period timer0))
+    (is eq nil (tw::period timer1))
+    (is = 1 (tw::repeats timer0))
+    (is = 1 (tw::repeats timer1))
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
+    ))
+
+;; start-time
+(define-test make-timer-checking-2 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (timer0 (tw::make-timer :callback cb :start-time start-time))
+         (timer1 (tw::make-timer :callback cb :start-time start-time :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (is = 0 (- (tw::start timer0) start-ms))
+    (is = 0 (- (tw::start timer1) start-ms))
+    (is eq nil (tw::end timer0))
+    (is eq nil (tw::end timer1))
+    (is eq nil (tw::period timer0))
+    (is eq nil (tw::period timer1))
+    (is = 1 (tw::repeats timer0))
+    (is = 1 (tw::repeats timer1))
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
+    ))
+
+;; start-time, end-time
+(define-test make-timer-checking-3 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (timer0 (tw::make-timer :callback cb :start-time start-time :end-time end-time))
+         (timer1 (tw::make-timer :callback cb :start-time start-time :end-time end-time :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (is = 0 (- (tw::start timer0) start-ms))
+    (is = 0 (- (tw::start timer1) start-ms))
+    (is = end-ms (tw::end timer0))
+    (is = end-ms (tw::end timer1))
+    (is eq nil (tw::period timer0))
+    (is eq nil (tw::period timer1))
+    (is = 1 (tw::repeats timer0))
+    (is = 1 (tw::repeats timer1))
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
+    ))
+
+;; start-time, NO end-time, repeat-times
+;; this timer should not be made
+(define-test make-timer-checking-4-0 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (repeat 10))
+    (fail (tw::make-timer :callback cb :start-time start-time :repeat-times repeat))
+    (fail (tw::make-timer :callback cb :start-time start-time :repeat-times repeat :scheduler wheel))))
+
+;; start-time, end-time, repeat-times
+(define-test make-timer-checking-4-1 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (repeat 10)
+         (timer0 (tw::make-timer :callback cb :start-time start-time :end-time end-time :repeat-times repeat))
+         (timer1 (tw::make-timer :callback cb :start-time start-time :end-time end-time :repeat-times repeat :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (is = 0 (- (tw::start timer0) start-ms))
+    (is = 0 (- (tw::start timer1) start-ms))
+    (is = end-ms (tw::end timer0))
+    (is = end-ms (tw::end timer1))
+    (is eq nil (tw::period timer0)) ; no schedule, cannot be inferred
+    (is eq 60 (tw::period timer1))  ; inferred
+    (is = 10 (tw::repeats timer0))
+    (is = 10 (tw::repeats timer1))
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
+    ))
+
+;; start-time, NO end-time, period
+(define-test make-timer-checking-5-0 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (repeat 10)
+         (period 0.1)
+         (timer0 (tw::make-timer :callback cb :start-time start-time :period-in-seconds period))
+         (timer1 (tw::make-timer :callback cb :start-time start-time :period-in-seconds period :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (is = 0 (- (tw::start timer0) start-ms))
+    (is = 0 (- (tw::start timer1) start-ms))
+    (is eq nil (tw::end timer0))
+    (is eq nil (tw::end timer1))
+    (is = 100 (tw::period timer0))  ; in milliseconds
+    (is eq 1 (tw::period timer1))
+    (true (> (tw::repeats timer0) 9999999)) ; inferred
+    (true (> (tw::repeats timer1) 9999999)) ; inferred
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
+    ))
+
+;; start-time, end-time, period
+(define-test make-timer-checking-5-1 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (repeat 10)
+         (period 0.1)
+         (timer0 (tw::make-timer :callback cb :start-time start-time :end-time end-time :period-in-seconds period))
+         (timer1 (tw::make-timer :callback cb :start-time start-time :end-time end-time :period-in-seconds period
+                                 :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (is = 0 (- (tw::start timer0) start-ms))
+    (is = 0 (- (tw::start timer1) start-ms))
+    (is = end-ms (tw::end timer0))
+    (is = end-ms (tw::end timer1))
+    (is = 100 (tw::period timer0))  ; in milliseconds
+    (is eq 1 (tw::period timer1))
+    (is = 600 (tw::repeats timer0)) ; inferred
+    (is = 600 (tw::repeats timer1)) ; inferred
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
+    ))
+
+;; start-time, NO end-time, period, repeat
+(define-test make-timer-checking-6-0 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (repeat 10)
+         (period 0.1)
+         (timer0 (tw::make-timer :callback cb :start-time start-time
+                                 :repeat-times repeat :period-in-seconds period))
+         (timer1 (tw::make-timer :callback cb :start-time start-time
+                                 :repeat-times repeat :period-in-seconds period :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (is = 0 (- (tw::start timer0) start-ms))
+    (is = 0 (- (tw::start timer1) start-ms))
+    (is eq nil (tw::end timer0))
+    (is eq nil (tw::end timer1))
+    (is = 100 (tw::period timer0))
+    (is eq 1 (tw::period timer1))
+    (is = 10 (tw::repeats timer0)) ; use supplied value
+    (is = 10 (tw::repeats timer1)) ; use supplied value
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
+    ))
+
+;; start-time, end-time, period, repeat
+(define-test make-timer-checking-6-1 :parent timer-wheel
+  (let* ((wheel (tw::make-wheel :size 5 :resolution 100 :name "WheelName"))
+         (cb (lambda (wheel timer) (format t "Wheel: ~d, Timer: ~d~%" (tw::name wheel) (tw::name timer))))
+         (start-time "2022-03-25 16:28:00")
+         (end-time   "2022-03-25 16:29:00")
+         (start-ms (tw::timestring->universal-milliseconds start-time))
+         (end-ms (tw::timestring->universal-milliseconds end-time))
+         (now-ms (tw::get-current-universal-milliseconds))
+         (repeat 10)
+         (period 0.1)
+         (timer0 (tw::make-timer :callback cb :start-time start-time :end-time end-time
+                                 :repeat-times repeat :period-in-seconds period))
+         (timer1 (tw::make-timer :callback cb :start-time start-time :end-time end-time
+                                 :repeat-times repeat :period-in-seconds period :scheduler wheel)))
+    (is eq :ok (tw::status timer0))
+    (is eq :ok (tw::status timer1))
+    (is eq nil (tw::scheduled-p timer0))
+    (is eq nil (tw::scheduled-p timer1))
+    (is = 0 (- (tw::start timer0) start-ms))
+    (is = 0 (- (tw::start timer1) start-ms))
+    (is = end-ms (tw::end timer0))
+    (is = end-ms (tw::end timer1))
+    (is = 100 (tw::period timer0))
+    (is eq 1 (tw::period timer1))
+    (is = 10 (tw::repeats timer0)) ; use supplied value
+    (is = 10 (tw::repeats timer1)) ; use supplied value
+    (format t "timer0: ~d~%" timer0)
+    (format t "timer1: ~d~%" timer1)
     ))
 
 (define-test inspect-timer :parent timer-wheel
@@ -165,7 +419,7 @@
   (finish (tw::inspect-timer (tw::make-timer :period-in-seconds 1)))
   (finish (tw::inspect-timer (tw::make-timer :period-in-seconds 2)))
   (finish (tw::inspect-timer (tw::make-timer :repeat-times 1)))
-  (finish (tw::inspect-timer (tw::make-timer :repeat-times 2)))
+  (fail   (tw::inspect-timer (tw::make-timer :repeat-times 2)))
   (finish (tw::inspect-timer (tw::make-timer :repeat-times nil)))
   (finish (tw::inspect-timer (tw::make-timer :end-time nil)))
   (finish (tw::inspect-timer (tw::make-timer :end-time "2099-03-24 16:28:00")))
@@ -178,7 +432,7 @@
   (finish (tw::inspect-timer (tw::make-timer :bindings '((a 1) (b 2)))))
   (finish (tw::inspect-timer (tw::make-timer :name "xxxx"))))
 
-(define-test attach-scheduler :parent timer-wheel
+(define-test attach-scheduler/get-real-period :parent timer-wheel ; may not cover all cases
   (let ((wheel0 (tw::make-wheel :size 10 :resolution 1  :name "wheel-resolution-01"))
         (wheel1 (tw::make-wheel :size 10 :resolution 10 :name "wheel-resolution-10"))
         (wheel2 (tw::make-wheel :size 10 :resolution 20 :name "wheel-resolution-20"))
@@ -196,6 +450,21 @@
     (is = 20  (tw::period timer4))
     (is = 30  (tw::period timer5))
     (is = 100 (tw::period timer6))
+    (is eql nil (tw::get-real-period timer0))
+    (is = 1   (tw::get-real-period timer1))
+    (is = 5   (tw::get-real-period timer2))
+    (is = 10  (tw::get-real-period timer3))
+    (is = 20  (tw::get-real-period timer4))
+    (is = 30  (tw::get-real-period timer5))
+    (is = 100 (tw::get-real-period timer6))
+    (is eql nil (tw::scheduler timer0))
+    (is eql nil (tw::scheduler timer1))
+    (is eql nil (tw::scheduler timer2))
+    (is eql nil (tw::scheduler timer3))
+    (is eql nil (tw::scheduler timer4))
+    (is eql nil (tw::scheduler timer5))
+    (is eql nil (tw::scheduler timer6))
+
     (finish (tw::attach-scheduler timer0 wheel1))
     (fail   (tw::attach-scheduler timer1 wheel1))
     (fail   (tw::attach-scheduler timer2 wheel1))
@@ -220,55 +489,68 @@
 
     (finish (tw::attach-scheduler timer0 wheel2)) ; resulotion 20 ms
     (fail   (tw::attach-scheduler timer1 wheel2))
-    (finish (tw::attach-scheduler timer2 wheel2))
-    (finish (tw::attach-scheduler timer3 wheel2))
+    (fail   (tw::attach-scheduler timer2 wheel2))
+    (fail   (tw::attach-scheduler timer3 wheel2))
     (finish (tw::attach-scheduler timer4 wheel2))
-    (finish (tw::attach-scheduler timer5 wheel2))
+    (fail   (tw::attach-scheduler timer5 wheel2)) ; timer period 0.03s, wheel resolution 0.02s
     (finish (tw::attach-scheduler timer6 wheel2))
     (is eq nil (tw::period timer0))
     (is = 1   (tw::period timer1))
     (is = 5   (tw::period timer2))
     (is = 1  (tw::period timer3))
-    (is = 2  (tw::period timer4))
+    (is = 1  (tw::period timer4))
     (is = 3  (tw::period timer5))
-    (is = 10 (tw::period timer6))
+    (is = 5  (tw::period timer6))
+    (is = 1   (tw::get-real-period timer1))
+    (is = 5   (tw::get-real-period timer2))
+    (is = 10  (tw::get-real-period timer3))
+    (is = 20  (tw::get-real-period timer4))
+    (is = 30  (tw::get-real-period timer5))
+    (is = 100 (tw::get-real-period timer6))
+    (is eq wheel2 (tw::scheduler timer0))
+    (is eq nil    (tw::scheduler timer1))
+    (is eq nil    (tw::scheduler timer2))
+    (is eq wheel1 (tw::scheduler timer3)) ; attach failed, scheduler slot did not change
+    (is eq wheel2 (tw::scheduler timer4))
+    (is eq wheel1 (tw::scheduler timer5))
+    (is eq wheel2 (tw::scheduler timer6))
 
-    (finish (tw::attach-scheduler timer0 wheel0))
+    (finish (tw::attach-scheduler timer0 wheel0)) ; resoluti 1 ms
     (finish (tw::attach-scheduler timer1 wheel0))
     (finish (tw::attach-scheduler timer2 wheel0))
     (finish (tw::attach-scheduler timer3 wheel0))
     (finish (tw::attach-scheduler timer4 wheel0))
     (finish (tw::attach-scheduler timer5 wheel0))
     (finish (tw::attach-scheduler timer6 wheel0))
+    (is = 1   (tw::get-real-period timer1))
+    (is = 5   (tw::get-real-period timer2))
+    (is = 10  (tw::get-real-period timer3))
+    (is = 20  (tw::get-real-period timer4))
+    (is = 30  (tw::get-real-period timer5))
+    (is = 100 (tw::get-real-period timer6))
+    (is eq wheel0 (tw::scheduler timer0))
+    (is eq wheel0 (tw::scheduler timer1))
+    (is eq wheel0 (tw::scheduler timer2))
+    (is eq wheel0 (tw::scheduler timer3))
+    (is eq wheel0 (tw::scheduler timer4))
+    (is eq wheel0 (tw::scheduler timer5))
+    (is eq wheel0 (tw::scheduler timer6))
 ))
 
-
-
-#+:ignore
-(test scheduling
-  (let ((wheel (make-wheel))
-	(timer (make-timer (lambda (whl tmr)
-			     (declare (ignore whl tmr))))))
-    ;; It's private...but still good to verify
-    (signals unscheduled
-      (tw::install-timer wheel timer))
-
-    (is (= 15 (tw::calculate-future-slot 10 5 100)))
-    (is (= 5 (tw::calculate-future-slot 90 15 100)))
-    (is (= 50 (tw::calculate-future-slot 0 150 100)))
-
+(define-test simple-scheduling :parent timer-wheel
+  (let* ((wheel (make-wheel :size 100 :resolution 100))
+	 (timer (make-timer :callback (lambda (whl tmr)
+			                (declare (ignore whl tmr))
+                                        (format t "Callback result printing!~%"))
+                            :scheduler wheel)))
+    (is = 15 (tw::calculate-future-slot 10 5 100))
+    (is = 5 (tw::calculate-future-slot 90 15 100))
+    (is = 50 (tw::calculate-future-slot 0 150 100))
     ;; Test that there's a minimum of 1 tick when calculating slots
-    (is (= 11 (tw::calculate-future-slot 10 0 100)))
-
-    (schedule-timer wheel timer :ticks 10)
-    (is (= 10 (tw::installed-slot timer)))
-    ;; When scheduled in the terminal slot, nothing remains on the timer.
-    (is (= 0 (remaining timer)))
-    (is (= 1 (length (elt (tw::slots wheel) 10))))
-    (uninstall-timer wheel timer)
-    (is (= 0 (length (elt (tw::slots wheel) 10))))
-    (is (eq 'unscheduled (remaining timer)))
-
-    (schedule-timer wheel timer :ticks 150)
-    (is (= 0 (tw::installed-slot timer)))
-    (is (= 50 (remaining timer)))))
+    (is = 11 (tw::calculate-future-slot 10 0 100))
+    (tw::schedule-timer wheel timer 1) ; the wheel's thread has just initialized, so the timer was installed in the 10th slot
+    (is = 10 (tw::installed-slot timer))
+    (is = 0 (remaining timer))
+    (is = 1 (length (elt (tw::slots wheel) 10)))
+    (format t "Wait for a second to see the result~%......~%")
+    (sleep 1)))
