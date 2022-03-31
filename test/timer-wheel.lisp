@@ -3,6 +3,25 @@
 
 (defparameter *test-wheel* (tw::make-wheel :size 10 :resolution 10 :name "TEST-WHEEL"))
 
+(defun make-callback ()
+  (lambda (wheel timer)
+    (format t "Wheel: ~d, Timer: ~d, Now: ~d~%" (tw::name wheel) (tw::name timer) (local-time:now))
+    (if (tw::result timer)
+        (incf (slot-value timer 'tw::result))
+        (setf (slot-value timer 'tw::result) 1))
+    t))
+
+(defun restore-timer-repeats (timer &optional (num 1))
+  (incf (slot-value timer 'tw::repeats) num)
+  timer)
+
+(defun n-seconds-later (time &optional (n 1))
+  "N seconds later after the specified time, return a local-time:timestamp object."
+  (let ((ut (cond ((typep time 'local-time:timestamp) (tw::timestamp->universal-milliseconds time))
+                  ((typep time 'string) (tw::timestring->universal-milliseconds time))
+                  (t (error "Wrong time type: ~d" time)))))
+    (tw::universal-milliseconds->timestamp (+ ut (truncate (* n 1000))))))
+
 (define-test make-wheel :parent timer-wheel
   (finish (tw::make-wheel))
   (finish (tw::make-wheel :size 11))
@@ -537,7 +556,7 @@
     (is eq wheel0 (tw::scheduler timer6))
 ))
 
-(define-test simple-scheduling :parent timer-wheel
+(define-test simple-scheduling :parent timer-wheel ; the original test case of timer-wheel.test
   (let* ((wheel (make-wheel :size 100 :resolution 100))
 	 (timer (make-timer :callback (lambda (whl tmr)
 			                (declare (ignore whl tmr))
@@ -554,3 +573,410 @@
     (is = 1 (length (elt (tw::slots wheel) 10)))
     (format t "Wait for a second to see the result~%......~%")
     (sleep 1)))
+
+;; corresponding to make-timer-checking-1
+(define-test schedul-no-arg :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10))
+         (wheel2 (make-wheel :size 10 :resolution 20))
+         (fn     (make-callback))
+         (delay  0.05) ; second
+         (timer (make-timer :callback fn)))
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is eql 1 (tw::repeats timer))
+    (is eql t (tw::schedule-timer-simply timer))
+
+    (sleep (/ (* 2 (tw::wheel-resolution wheel1)) 1000))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer)
+    (is eql 1 (tw::repeats timer))
+
+    (is eql t (tw:schedule-timer wheel1 timer))
+    (is eql wheel1 (tw::scheduler timer))
+    (sleep (/ (* 2 (tw::wheel-resolution wheel1)) 1000))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel2 timer))
+    (is eql wheel2 (tw::scheduler timer))
+    (sleep (/ (* 2 (tw::wheel-resolution wheel2)) 1000))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel1 timer delay))
+    (is eql wheel1 (tw::scheduler timer))
+    (format t "sleep time: ~d~%" (+ delay (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (sleep (+ delay (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel2 timer delay))
+    (is eql wheel2 (tw::scheduler timer))
+    (sleep (+ delay (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (restore-timer-repeats timer)
+
+    (is eql 1 (tw::repeats timer))
+    (is eql 5 (tw::result timer))
+))
+
+;; corresponding to make-timer-checking-2
+(define-test scheduler-start-time :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10))
+         (wheel2 (make-wheel :size 10 :resolution 20))
+         (fn     (make-callback))
+         (delay  0.05) ; second
+         (start "2022-03-25 16:28:00")
+         (end   "2022-03-25 16:29:00")
+         (repeat 10)
+         (period 0.1)
+         (timer (make-timer :callback fn :start-time start)))
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is eql 1 (tw::repeats timer))
+    (is eql t (tw::schedule-timer-simply timer))
+
+    (sleep (/ (* 2 (tw::wheel-resolution wheel1)) 1000))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer)
+    (is eql 1 (tw::repeats timer))
+
+    (is eql t (tw:schedule-timer wheel1 timer))
+    (is eql wheel1 (tw::scheduler timer))
+    (sleep (/ (* 2 (tw::wheel-resolution wheel1)) 1000))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel2 timer))
+    (is eql wheel2 (tw::scheduler timer))
+    (sleep (/ (* 2 (tw::wheel-resolution wheel2)) 1000))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel1 timer delay))
+    (is eql wheel1 (tw::scheduler timer))
+    (format t "sleep time: ~d~%" (+ delay (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (sleep (+ delay (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel2 timer delay))
+    (is eql wheel2 (tw::scheduler timer))
+    (sleep (+ delay (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (restore-timer-repeats timer)
+
+    (is eql 1 (tw::repeats timer))
+    (is eql 5 (tw::result timer))
+))
+
+;; ;; start-time, end-time, corresponding to make-timer-checking-3
+(define-test scheduler-start-time/end-time :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10))
+         (wheel2 (make-wheel :size 10 :resolution 20))
+         (fn     (make-callback))
+         (delay  0.05) ; second
+         (start "2022-03-25 16:28:00")
+         (end   "2099-03-25 16:29:00")
+         (repeat 10)
+         (period 0.1)
+         (just-then (tw::get-current-universal-milliseconds))
+         (timer (make-timer :callback fn :start-time start :end-time end)))
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is eql 1 (tw::repeats timer))
+    (is eql t (tw::schedule-timer-simply timer))
+
+    (sleep (/ (* 2 (tw::wheel-resolution wheel1)) 1000))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer)
+    (is eql 1 (tw::repeats timer))
+
+    (is eql t (tw:schedule-timer wheel1 timer))
+    (is eql wheel1 (tw::scheduler timer))
+    (sleep (/ (* 2 (tw::wheel-resolution wheel1)) 1000))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel2 timer))
+    (is eql wheel2 (tw::scheduler timer))
+    (sleep (/ (* 2 (tw::wheel-resolution wheel2)) 1000))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel1 timer delay))
+    (is eql wheel1 (tw::scheduler timer))
+    (format t "sleep time: ~d~%" (+ delay (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (sleep (+ delay (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (restore-timer-repeats timer)
+
+    (is eql t (tw:schedule-timer wheel2 timer delay))
+    (is eql wheel2 (tw::scheduler timer))
+    (sleep (+ delay (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (restore-timer-repeats timer)
+
+    (setf (slot-value timer 'tw::end) just-then)
+    (is eql nil (tw:schedule-timer wheel1 timer))
+
+    (is eql 1 (tw::repeats timer))
+    (is eql 5 (tw::result timer))
+))
+
+;; start-time, end-time, repeat-times, corresponding to make-timer-checking-4-1
+(define-test scheduler-start-time/end-time/repeat-times :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10))
+         (wheel2 (make-wheel :size 10 :resolution 20))
+         (fn     (make-callback))
+         (delay  0.05) ; second
+         (now (local-time:now))
+         (start (n-seconds-later now 1))
+         (end   (n-seconds-later start 1))
+         (repeat 10)
+         (period 0.1)
+         (just-then (tw::get-current-universal-milliseconds))
+         (timer (make-timer :callback fn :start-time start :end-time end :repeat-times repeat)))
+    (is = 100 (tw::period timer)) ; scheduler did not specified, can infer physic time in milliseconds
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is eql 10 (tw::repeats timer))
+    (is eql t (tw::schedule-timer-simply timer)) ; schedule and run normally
+
+    (sleep (+ 1 (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (format t "timer: ~d~%" timer)
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+    (is eql 10 (tw::repeats timer))
+
+    (setf start (n-seconds-later (local-time:now) 1)) ; setf new start and end
+    (setf end (n-seconds-later start 1))
+    (setf (slot-value timer 'tw::start) (tw::timestamp->universal-milliseconds start)
+          (slot-value timer 'tw::end) (tw::timestamp->universal-milliseconds end))
+
+    (is eql t (tw:schedule-timer wheel2 timer)) ; schedule and run normally
+    (is eql wheel2 (tw::scheduler timer))
+    (is = 5 (tw::period timer))
+    (sleep (1+ (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+
+    (is eql t (tw:schedule-timer wheel1 timer delay)) ; schedule but expired
+    (is eql wheel1 (tw::scheduler timer))
+
+    (is eql 10 (tw::repeats timer)) ; can be scheduled, but it has already expired, so repeats did not change
+    (is eql 20(tw::result timer))
+    ))
+
+;; start-time, NO end-time, period, corresponding to make-timer-checking-5-0
+(define-test scheduler-start-time/no-end-time/period :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10))
+         (wheel2 (make-wheel :size 10 :resolution 20))
+         (fn     (let ((n 10))
+                   (lambda (wheel timer)
+                     (declare (ignore wheel))
+                     (incf (slot-value timer 'tw::result))
+                     (format t "Inf timer scheduling, but will exit when n = 0, now n = ~d~%" n)
+                     (if (<= n 2)
+                         (setf (slot-value timer 'tw::repeats) 0))
+                     (decf n))))
+         (delay  0.05) ; second
+         (now (local-time:now))
+         (start (n-seconds-later now 1))
+         (end   (n-seconds-later start 1))
+         (repeat 10)
+         (period 0.1)
+         (just-then (tw::get-current-universal-milliseconds))
+         (timer (make-timer :callback fn :start-time start :period-in-seconds period)))
+    (format t "timer: ~d~%" timer)
+    (setf (slot-value timer 'tw::result) 0)
+    (is = 100 (tw::period timer))
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is = 10 (tw::period timer))
+    (true (> (tw::repeats timer) 999999999))
+    (format t "Scheduling for the 1st time~%")
+    (is eql t (tw::schedule-timer-simply timer)) ; schedule and run normally
+
+    (sleep (+ 1 (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+    (is eql 10 (tw::repeats timer))
+    (is eql 10 (tw::result timer))
+    (format t "timer: ~d~%" timer)
+
+    (setf start (n-seconds-later (local-time:now) 1)) ; setf new start and end
+    ;;(setf end (n-seconds-later start 1))
+    (setf (slot-value timer 'tw::start) (tw::timestamp->universal-milliseconds start))
+    ;;      (slot-value timer 'tw::end) (tw::timestamp->universal-milliseconds end))
+
+    (format t "Scheduling for the 2nd time~%")
+    (is eql t (tw:schedule-timer wheel2 timer)) ; schedule and run normally
+    (is eql wheel2 (tw::scheduler timer))
+    (is = 5 (tw::period timer))
+    (sleep (1+ (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+
+    (format t "Scheduling for the 3rd time~%")
+    (is eql t (tw:schedule-timer wheel1 timer delay)) ; schedule but expired
+    (is eql wheel1 (tw::scheduler timer))
+    (is eql 10 (tw::repeats timer)) ; can be scheduled, but it has already expired, so repeats did not change
+
+    (sleep (+ 1 (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (is = 14 (tw::result timer)) ; the tick function does not check repeats and thus the last 2 schedulings incf 2 for each
+    (format t "timer: ~d~%" timer)
+    ))
+
+;; start-time, end-time, period, corresponding to make-timer-checking-5-1
+(define-test scheduler-start-time/end-time/period :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10))
+         (wheel2 (make-wheel :size 10 :resolution 20))
+         (fn     (let ((n 10))
+                   (lambda (wheel timer)
+                     (declare (ignore wheel))
+                     (incf (slot-value timer 'tw::result))
+                     (format t "Inf timer scheduling, but will exit when n = 0, now n = ~d~%" n)
+                     (if (<= n 2)
+                         (setf (slot-value timer 'tw::repeats) 0))
+                     (decf n))))
+         (delay  0.05) ; second
+         (now (local-time:now))
+         (start (n-seconds-later now 1))
+         (end   (n-seconds-later start 1))
+         (repeat 10)
+         (period 0.1)
+         (just-then (tw::get-current-universal-milliseconds))
+         (timer (make-timer :callback fn :start-time start :end-time end :period-in-seconds period)))
+    (format t "timer: ~d~%" timer)
+    (setf (slot-value timer 'tw::result) 0)
+    (is = 100 (tw::period timer))
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is = 10 (tw::period timer))
+    (is = 10 (tw::repeats timer))
+    (format t "Scheduling for the 1st time~%")
+    (is eql t (tw::schedule-timer-simply timer)) ; schedule and run normally
+
+    (sleep (+ 1 (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+    (is eql 10 (tw::repeats timer))
+    (is eql 10 (tw::result timer))
+    (format t "timer: ~d~%" timer)
+
+    (setf start (n-seconds-later (local-time:now) 1)) ; setf new start and end
+    (setf end (n-seconds-later start 1))
+    (setf (slot-value timer 'tw::start) (tw::timestamp->universal-milliseconds start)
+          (slot-value timer 'tw::end) (tw::timestamp->universal-milliseconds end))
+
+    (format t "Scheduling for the 2nd time~%")
+    (is eql t (tw:schedule-timer wheel2 timer)) ; schedule and run normally
+    (is eql wheel2 (tw::scheduler timer))
+    (is = 5 (tw::period timer))
+    (sleep (1+ (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+
+    (format t "timer: ~d~%" timer)
+    ))
+
+;; start-time, NO end-time, period, repeat, corresponding to make-timer-checking-6-0
+(define-test scheduler-start-time/no-end-time/period/repeat :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10))
+         (wheel2 (make-wheel :size 10 :resolution 20))
+         (fn     (make-callback))
+         (delay  0.05) ; second
+         (now (local-time:now))
+         (start (n-seconds-later now 1))
+         (end   (n-seconds-later start 1))
+         (repeat 10)
+         (period 0.1)
+         (timer (make-timer :callback fn :start-time start :period-in-seconds period :repeat-times repeat)))
+    (format t "timer: ~d~%" timer)
+    (setf (slot-value timer 'tw::result) 0)
+    (is = 100 (tw::period timer))
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is = 10 (tw::period timer))
+    (is = repeat (tw::repeats timer))
+    (format t "Scheduling for the 1st time~%")
+    (is eql t (tw::schedule-timer-simply timer)) ; schedule and run normally
+
+    (sleep (1+ (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+    (is eql 10 (tw::repeats timer))
+    (is eql 10 (tw::result timer))
+    (format t "timer: ~d~%" timer)
+
+    (setf start (n-seconds-later (local-time:now) 1)) ; setf new start and end
+    ;;(setf end (n-seconds-later start 1))
+    (setf (slot-value timer 'tw::start) (tw::timestamp->universal-milliseconds start))
+    ;;      (slot-value timer 'tw::end) (tw::timestamp->universal-milliseconds end))
+
+    (format t "Scheduling for the 2nd time~%")
+    (is eql t (tw:schedule-timer wheel2 timer))
+    (is eql wheel2 (tw::scheduler timer))
+    (is = 5 (tw::period timer))
+    (sleep (1+ (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+
+    (format t "Scheduling for the 3rd time~%")
+    (is eql t (tw:schedule-timer wheel1 timer delay))
+    (is eql wheel1 (tw::scheduler timer))
+    (is eql 10 (tw::repeats timer))
+
+    (sleep (+ 1 (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (is = 30 (tw::result timer))
+    (format t "timer: ~d~%" timer)
+    ))
+
+;; start-time, end-time, period, repeat, corresponding to make-timer-checking-6-1
+(define-test scheduler-start-time/end-time/period/repeat :parent timer-wheel
+  (let* ((wheel1 (make-wheel :size 10 :resolution 10 :name "wheel1"))
+         (wheel2 (make-wheel :size 10 :resolution 20 :name "wheel2"))
+         (fn     (make-callback))
+         (delay  0.05) ; second
+         (now (local-time:now))
+         (start (n-seconds-later now 1))
+         (end   (n-seconds-later start 1))
+         (repeat 10)
+         (period 0.1)
+         (timer (make-timer :callback fn :start-time start :end-time end :period-in-seconds period :repeat-times repeat)))
+    (format t "timer: ~d~%" timer)
+    (setf (slot-value timer 'tw::result) 0)
+    (is = 100 (tw::period timer))
+    (false (tw::schedule-timer-simply timer))
+    (finish (tw::attach-scheduler timer wheel1))
+    (is eql wheel1 (tw::scheduler timer))
+    (is = 10 (tw::period timer))
+    (is = repeat (tw::repeats timer))
+    (format t "Scheduling for the 1st time~%")
+    (is eql t (tw::schedule-timer-simply timer)) ; schedule and run normally
+
+    (sleep (1+ (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+    (is eql 10 (tw::repeats timer))
+    (is eql 10 (tw::result timer))
+    (format t "timer: ~d~%" timer)
+
+    (setf start (n-seconds-later (local-time:now) 1)) ; setf new start and end
+    (setf end (n-seconds-later start 1))
+    (setf (slot-value timer 'tw::start) (tw::timestamp->universal-milliseconds start)
+          (slot-value timer 'tw::end) (tw::timestamp->universal-milliseconds end))
+
+    (format t "Scheduling for the 2nd time~%")
+    (is eql t (tw:schedule-timer wheel2 timer))
+    (is eql wheel2 (tw::scheduler timer))
+    (is = 5 (tw::period timer))
+    (sleep (1+ (/ (* 2 (tw::wheel-resolution wheel2)) 1000)))
+    (is eql 0 (tw::repeats timer))
+    (restore-timer-repeats timer repeat)
+
+    (format t "Scheduling for the 3rd time~%")
+    (is eql t (tw:schedule-timer wheel1 timer delay))
+    (is eql wheel1 (tw::scheduler timer))
+    (is eql 10 (tw::repeats timer))
+
+    (sleep (+ 1 (/ (* 2 (tw::wheel-resolution wheel1)) 1000)))
+    (is = 30 (tw::result timer))
+    (format t "timer: ~d~%" timer)
+    ))
