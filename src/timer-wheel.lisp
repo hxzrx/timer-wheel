@@ -363,6 +363,8 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
   (assert (or (null delay-seconds)
               (and (realp delay-seconds) (> delay-seconds 0))))
   (assert (> (slot-value timer 'repeats) 0))
+  (unless (eq wheel (scheduler timer))
+    (attach-scheduler timer wheel))
   (if (and (end timer) (< (+ (end timer) *expired-epsilon*)
                           (get-current-universal-milliseconds)))
       (prog1 nil
@@ -376,6 +378,13 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
         (setf (slot-value timer 'remaining) (max 1 calculated-timeout)
               (slot-value timer 'scheduled-p) t)
         (install-timer wheel timer))))
+
+(defun schedule-timer-simply (timer &optional delay-seconds)
+  "Schedule a timer with the scheduler it's attached to."
+  (if-let (wheel (scheduler timer))
+    (schedule-timer wheel timer delay-seconds)
+    (prog1 nil
+      (log:info "Cannot schedule a timer without a scheduler: ~d" timer))))
 
 (defun initialize-timer-wheel (wheel)
   "Ensure the WHEEL is stopped, then initialize the WHEEL context, and start the WHEEL thread."
