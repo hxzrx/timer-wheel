@@ -145,8 +145,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   (check-type start-time    (or null positive-fixnum string local-time:timestamp)) ; may allow universal time in the future
   (check-type repeat-times  (or null positive-fixnum))
   (check-type end-time      (or null positive-fixnum string local-time:timestamp))
-  (when (or (and (null end-time) (null period-in-seconds) repeat-times (> repeat-times 1)) ; cannot infer period so it's meaningless
-            )
+  (when (and (null end-time) (null period-in-seconds) repeat-times (> repeat-times 1)) ; cannot infer period so it's meaningless
     (error "Meaningless timer with repeat ~d and period ~d" repeat-times period-in-seconds))
   (let* ((start (cond ((null start-time) (get-current-universal-milliseconds)) ; nil will schedule immediately
                       ((stringp start-time) (timestring->universal-milliseconds start-time))
@@ -182,7 +181,10 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                                (car period)
                                (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
                                       period-in-seconds (/ resolution 1000))))
-                         nil))))
+                         (if (and end-time (> repeat-times 1))
+                             (/ (- end start) repeat-times) ; can only infer physic time period
+                             nil)
+                         ))))
     (when (and start end) (assert (>= end start)))
     (make-instance 'timer
 		   :callback callback
@@ -210,7 +212,6 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                          (error "The periods of timer <~d> should be exact n-times of the resolution <~d> of the scheduler <~d>"
                                 (* period-in-ms 1000) (/ new-resolution 1000) (name new-scheduler)))))
             (let* ((new-period (multiple-value-list (truncate (/ old-period new-resolution)))))
-              (log:debug "attach scheduler, new period: ~d" new-period)
               (if (= (cadr new-period) 0)
                   (setf (slot-value timer 'period) (car new-period))
                   (error "The periods of timer <~d> should be exact n-times of the resolution of the scheduler <~d>"
@@ -241,7 +242,6 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
 
 (defmethod invoke-callback :after ((wheel wheel) (timer timer))
   (decf (repeats timer))
-  (log:debug "timer: ~d~%" timer)
   (with-slots (end) timer
     (when (> (repeats timer) 0)
       (if (and end (< (+ end *expired-epsilon*) (get-current-universal-milliseconds)))
@@ -249,7 +249,9 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
           (reinstall-timer wheel timer)))))
 
 (defmethod tick ((wheel wheel))
-  "Tick function runs all timers in current slot."
+  "Tick function runs all timers in current slot.
+Note that this method does not check repeats of each timer,
+so every timers enqueued should make sure they have repeats greater than zero."
   (let (tlist)
     ;; Update the wheel
     (bt:with-lock-held ((timeout-lock wheel)) ; locked so that no timer will be enqueued
@@ -277,7 +279,6 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   "This method enqueues the timer to the slot of the wheel, according to the remaining of the timer.
 If this timer will be called within one round of the wheel (from the next slot), calculate it's accurate slot index,
 else enqueue the timer to the current slot."
-  (log:debug "timer scheduled-p: ~d" (scheduled-p timer))
   (unless (scheduled-p timer)
     (error 'unscheduled :timer timer))
   (let ((max-wheel-ticks (length (slots wheel))))
@@ -287,7 +288,6 @@ else enqueue the timer to the current slot."
 			      (current-slot wheel)
 			      (remaining timer)
 			      (length (slots wheel)))))
-            (log:info "current-slot: ~d, future-slot: ~d" (current-slot wheel) future-slot)
 	    (setf (remaining timer) 0                ; set to 0, will be called within a round
 		  (installed-slot timer) future-slot ;
 		  ;; Install the timer at the end of the list
@@ -309,7 +309,7 @@ else enqueue the timer to the current slot."
   "Exactly the same as install-timer, except some state related slot are set here."
   (setf (slot-value timer 'remaining) (period timer)
         (slot-value timer 'status) :ok
-        (slot-value timer 'schedule-p) t)
+        (slot-value timer 'scheduled-p) t)
   (let ((max-wheel-ticks (length (slots wheel))))
     (if (< (remaining timer) max-wheel-ticks)
         (bt:with-lock-held ((timeout-lock wheel))
@@ -374,7 +374,6 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
       (let ((calculated-timeout  (if delay-seconds
                                      (round (* +milliseconds-per-second+ delay-seconds) (wheel-resolution wheel))
                                      (calculate-slot-index wheel timer))))
-        (log:info "delay: ~f, calculated-timeout: ~d" delay-seconds calculated-timeout)
         (setf (slot-value timer 'remaining) (max 1 calculated-timeout)
               (slot-value timer 'scheduled-p) t)
         (install-timer wheel timer))))
