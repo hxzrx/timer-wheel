@@ -5,8 +5,11 @@
 ;;; "timer-wheel" goes here. Hacks and glory await!
 
 (defparameter *default-resolution* 100 "milliseconds")
-(defparameter *default-size* 100 "slots per wheel")
+(defparameter *default-size* 100 "slots per wheel") ; 100 * 100 makes a ten-seconds-long period scheduler
 
+(defparameter *expired-epsilon* *default-resolution*
+  "For those timers which has exipred time specified,
+*expired-epsilon* makes an reasonable tolerate to schedule them.")
 
 (define-condition unscheduled (error)
   ((timer :initarg :timer
@@ -73,7 +76,12 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
 remaining: ticks left to funcall the callback.
 installed-slot: the slot index where this timer locates in the wheel's slots.
 callback: a function which accepts two parameters: wheel and timer.
-start: the start time of the timer, will convert to universal time in milliseconds in make-timer.
+start: The start time of the timer, will convert to universal time in milliseconds in make-timer.
+       Note that the start slot of the timer means it will begin to run after this time,
+         but not mean it should run as soon as the time is fulfilled.
+         Think about a timer is created with a very long time before the current time,
+         the past runs should be discarded or not?
+         There is no perfect solution!
 period: the period for the repeatable task, and the period should be exact n-times the resolution of the attached scheduler.
         So, if scheduler is initialized, the period should be a positive integer for periodical tasks,
         or nil for non-periodical tasks.
@@ -137,6 +145,9 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   (check-type start-time    (or null positive-fixnum string local-time:timestamp)) ; may allow universal time in the future
   (check-type repeat-times  (or null positive-fixnum))
   (check-type end-time      (or null positive-fixnum string local-time:timestamp))
+  (when (or (and (null end-time) (null period-in-seconds) repeat-times (> repeat-times 1)) ; cannot infer period so it's meaningless
+            )
+    (error "Meaningless timer with repeat ~d and period ~d" repeat-times period-in-seconds))
   (let* ((start (cond ((null start-time) (get-current-universal-milliseconds)) ; nil will schedule immediately
                       ((stringp start-time) (timestring->universal-milliseconds start-time))
                       ((typep start-time 'local-time:timestamp) (timestamp->universal-milliseconds start-time))
@@ -145,7 +156,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                     ((stringp end-time) (timestring->universal-milliseconds end-time))
                     ((typep end-time 'local-time:timestamp) (timestamp->universal-milliseconds end-time))
                     (t (error "Invalid end-time: ~d" end-time))))
-         (repeats (if repeat-times-supplied-p
+         (repeats (if (and repeat-times-supplied-p repeat-times)
                       repeat-times
                       (if (and end-time period-in-seconds) ; inference the repeats
                           (round (- end start) (* period-in-seconds +milliseconds-per-second+))
@@ -223,129 +234,115 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   (:documentation "Operate one tick of the wheel scedule."))
 
 (defmethod invoke-callback ((wheel wheel) (timer timer))
+  "Wrap funcall to callback, and check if it is a periodical timer in the :after method."
+  ;; if timeout is sensitive for this timer, the codes will be prefer to add here.
   (lambda ()
     (funcall (callback timer) wheel timer)))
 
 (defmethod invoke-callback :after ((wheel wheel) (timer timer))
   (decf (repeats timer))
   (log:debug "timer: ~d~%" timer)
-  (when (> (repeats timer) 0)
-    (reinstall-timer wheel timer)))
+  (with-slots (end) timer
+    (when (> (repeats timer) 0)
+      (if (and end (< (+ end *expired-epsilon*) (get-current-universal-milliseconds)))
+          (log:info "The timer has expired: ~d" timer)
+          (reinstall-timer wheel timer)))))
 
 (defmethod tick ((wheel wheel))
+  "Tick function runs all timers in current slot."
   (let (tlist)
     ;; Update the wheel
-    (bt:with-lock-held ((timeout-lock wheel)) ; 加锁是为了防止向里面添加计时器
+    (bt:with-lock-held ((timeout-lock wheel)) ; locked so that no timer will be enqueued
       (setf (current-slot wheel) (mod (1+ (current-slot wheel))
 				      (length (slots wheel))))
-      (rotatef tlist (elt (slots wheel) (current-slot wheel)))) ; 交换tlist和当前槽位内容, 交换后对应槽位为空
+      (rotatef tlist (elt (slots wheel) (current-slot wheel))))
     ;; Then run the timers outside the lock
     (dolist (timer tlist)
       (when (eq :ok (status timer)) ; currently only 2 status, :ok and :canceled
         (if (zerop (remaining timer))
-	    ;;(funcall (callback timer) wheel timer) ; 计时器剩余事件为零就执行回调
             (funcall (invoke-callback wheel timer))
-	    (install-timer wheel timer))))))        ; 否则重新安装计时器.
+	    (install-timer wheel timer))))))
 
 (defun calculate-future-slot (current-slot remaining slots)
   (mod (+ current-slot (max 1 remaining )) ;minimum resolution of 1 tick , 最小为1是为了防止立即要执行的任务被安排到下一个周期.
        slots))
 
-(defmethod install-timer :before (wheel timer)   ; 实际上没必要每次都调用:before, 一次调用即可
+(defmethod install-timer :before (wheel timer)
+  ;; this check can be moved to the :after method initialize-instance of wheel
   (declare (ignore timer))
   (unless (wheel-thread wheel)
     (initialize-timer-wheel wheel)))
 
 (defmethod install-timer ((wheel wheel) (timer timer))
-  "根据timer的remaining值, 计算这个timer落在slots的哪个位置,
-如果在一个时轮周期内会执行到这个timer, 就精确计算其位置, 否则将其放到当前位置."
+  "This method enqueues the timer to the slot of the wheel, according to the remaining of the timer.
+If this timer will be called within one round of the wheel (from the next slot), calculate it's accurate slot index,
+else enqueue the timer to the current slot."
   (log:debug "timer scheduled-p: ~d" (scheduled-p timer))
   (unless (scheduled-p timer)
     (error 'unscheduled :timer timer))
   (let ((max-wheel-ticks (length (slots wheel))))
-    (if (< (remaining timer) max-wheel-ticks) ; 表示在一个时轮周期内能执行的任务
+    (if (< (remaining timer) max-wheel-ticks) ; will be called within one round of the wheel
 	(bt:with-lock-held ((timeout-lock wheel)) ; 注意这里加了锁
-	  (let ((future-slot (calculate-future-slot ; 计算此计时器落在哪个槽位
+	  (let ((future-slot (calculate-future-slot ; calculate the accurate slot index
 			      (current-slot wheel)
 			      (remaining timer)
 			      (length (slots wheel)))))
             (log:info "current-slot: ~d, future-slot: ~d" (current-slot wheel) future-slot)
-	    (setf (remaining timer) 0                ; 将剩余时间设置为0, 表示下次轮到对应滴答就执行此计时器.
-		  (installed-slot timer) future-slot ; 设置计时器的槽位
+	    (setf (remaining timer) 0                ; set to 0, will be called within a round
+		  (installed-slot timer) future-slot ;
 		  ;; Install the timer at the end of the list
 		  ;; This ensures that timer evaluation order is FIFO.
 		  ;; TODO: Actually use a FIFO instead of a list
-		  (elt (slots wheel) future-slot)    ; 向时轮对应的滴答槽位添加本计时器任务.
+		  (elt (slots wheel) future-slot)    ; use svref to speedup the accessing
 		  (append (elt (slots wheel) future-slot) ; append相当于对fifo队列的enqueue操作
 			  (list timer)))
 	    ;; (push timer (elt (slots wheel) future-slot))
 	    ))
 	;; The timer needs to be reinstalled later
         ;; 为何没加锁?? 如果在其它线程执行本函数可能会有竞争
-	(progn (decf (remaining timer) max-wheel-ticks) ; 如果在一个周期内不能执行此任务, 减去一个周期的滴答数.
-	       (push timer (elt (slots wheel) (current-slot wheel))) ; 随便将此任务放到当前滴答, 而不去计算它真正属于哪个槽位
-	       (setf (installed-slot timer) (current-slot wheel))))  ; 这样可减少槽位索引计算, 反正此计时器需要重新安装.
+	(progn (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
+	       (push timer (elt (slots wheel) (current-slot wheel))) ; enqueue the timer to the current slot
+	       (setf (installed-slot timer) (current-slot wheel))))  ; the accurate will be re-caculated in the future
     t))
 
 (defmethod reinstall-timer ((wheel wheel) (timer timer))
+  "Exactly the same as install-timer, except some state related slot are set here."
   (setf (slot-value timer 'remaining) (period timer)
         (slot-value timer 'status) :ok
         (slot-value timer 'schedule-p) t)
   (let ((max-wheel-ticks (length (slots wheel))))
-    (if (< (remaining timer) max-wheel-ticks) ; 表示在一个时轮周期内能执行的任务
-        (bt:with-lock-held ((timeout-lock wheel)) ; 注意这里加了锁
-          (let ((future-slot (calculate-future-slot ; 计算此计时器落在哪个槽位
+    (if (< (remaining timer) max-wheel-ticks)
+        (bt:with-lock-held ((timeout-lock wheel))
+          (let ((future-slot (calculate-future-slot
                               (current-slot wheel)
                               (remaining timer)
                               (length (slots wheel)))))
-            (setf (remaining timer) 0                ; 将剩余时间设置为0, 表示下次轮到对应滴答就执行此计时器.
-                  (installed-slot timer) future-slot ; 设置计时器的槽位
+            (setf (remaining timer) 0
+                  (installed-slot timer) future-slot
                   ;; Install the timer at the end of the list
                   ;; This ensures that timer evaluation order is FIFO.
                   ;; TODO: Actually use a FIFO instead of a list
-                  (elt (slots wheel) future-slot)    ; 向时轮对应的滴答槽位添加本计时器任务.
-                  (append (elt (slots wheel) future-slot) ; append相当于对fifo队列的enqueue操作
+                  (elt (slots wheel) future-slot)
+                  (append (elt (slots wheel) future-slot)
                           (list timer)))
             ;; (push timer (elt (slots wheel) future-slot))
             ))
         ;; The timer needs to be reinstalled later
-        ;; 为何没加锁?? 如果在其它线程执行本函数可能会有竞争
-        (progn (decf (remaining timer) max-wheel-ticks) ; 如果在一个周期内不能执行此任务, 减去一个周期的滴答数.
-               (push timer (elt (slots wheel) (current-slot wheel))) ; 随便将此任务放到当前滴答, 而不去计算它真正属于哪个槽位
-               (setf (installed-slot timer) (current-slot wheel))))  ; 这样可减少槽位索引计算, 反正此计时器需要重新安装.
+        (progn (decf (remaining timer) max-wheel-ticks)
+               (push timer (elt (slots wheel) (current-slot wheel)))
+               (setf (installed-slot timer) (current-slot wheel))))
     t))
 
-(defmethod uninstall-timer ((wheel wheel) (timer timer)) ; 本方法可以进一步优化, 只需将计时任务设置一个状态以标识是否取消
+(defmethod uninstall-timer ((wheel wheel) (timer timer))
   (setf (slot-value timer 'status) :canceled
         (slot-value timer 'scheduled-p) nil
         (slot-value timer 'remaining) nil
-        (slot-value timer 'installed-slot) nil)
-  #+:ignore(when (installed-slot timer)
-    (bt:with-lock-held ((timeout-lock wheel))
-      ;; Check again in case something else already uninstalled the timer.
-      (when (installed-slot timer)
-        (setf (slot-value timer 'status) :cancelled) ; 下面这个setf整个都可以不要
-	(setf (elt (slots wheel) (installed-slot timer)) ; 可用svref替代elt来优化
-	      (remove timer
-		      (elt (slots wheel) (installed-slot timer))
-		      :test #'eq)
-	      (remaining timer) 'unscheduled
-	      (installed-slot timer) nil)))))
-
-
-;; 与调度时间相关的timer槽位: start, period, repeats, end, 这些都需要拿来设置remaining
-;; 根据时间类型和运行次数, timer有以下类型:
-;; repeats: 非负整数, repeats都会被设置, 默认1, 表示只运行一次, 0表示运行完毕, 无限循环任务用一个大整数表示.
-;;         原schedule-timer需要更新相应的ticks和seconds的cond分支.
-;; end: 若无设置, 表示不限制结束时间,
-;;      若有设置, 表示调度时不能超过end的时间.
-;; start: 若无设置, 就使用schedule-timer的delay-seconds来计算开始时间
-;;        若有设置
-;; 调度后scheduled-p置为T.
-
+        (slot-value timer 'installed-slot) nil))
 
 (defmethod calculate-slot-index ((wheel wheel) (timer timer))
-  ;; calculate the first slot index depends on timer's class slots
+  "Calculate the first slot index depends on the timer and the wheel.
+Note that the start slot of the timer means it will begin to run after this time,
+but not means it should run as soon as the time is fulfilled."
   (with-slots (start repeats period) timer
     (let* ((now (get-current-universal-milliseconds)))
       (if (> start now)
@@ -353,38 +350,35 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
           1))))
 
 (defun schedule-timer (wheel timer &optional delay-seconds)
-  ;;(ticks nil ticks-p) (seconds nil seconds-p))
-  "Schedule a timer with one of
-  :ticks - The number of resolution steps per (wheel-resolution wheel), minimum
-           of 1 tick.
-  :milliseconds - The integer number of milliseconds worth of ticks, must be
-                  (and (plusp milliseconds)
-                       (zerop (mod milliseconds (wheel-resolution wheel)))).
-  :seconds - The real value of seconds, rounded to the nearest resolution tick.
+  "Schedule a timer with an optional delay-seconds.
+delay-seconds: The real value of seconds, rounded to the nearest resolution tick.
+Return T if the timer is succefully scheduled, and return NIl if it's failed.
 
-In all cases, the timeout will elapse in no more than
-   (* calculated-quantity-of-ticks resolution) milliseconds.
+delay-seconds is used for some timer that will be sheduled some time later.
+For simplicity, if delay-seconds is specified, the start timer of the timer will not take effect.
+delay-seconds is usually for the kind of timer that is not well designed with many arguments supplied with make-timer,
 
-The keyword arguments are checked in this order: ticks, milliseconds, seconds
-for valid values."
-  ;; delay-seconds is for some timer that will be sheduled some time later,
-  ;; which cannot be scheduled with specified wall time.
-  ;; for simplicity, if delay-seconds specified, the start timer of the timer will not take effect.
+If one want to schedule a timer with wall time, make the timer with make-timer and supply a start-time argument,
+  then called it with schedule-timer and left delay-seconds unsupplied."
   (assert (or (null delay-seconds)
               (and (realp delay-seconds) (> delay-seconds 0))))
   (assert (> (slot-value timer 'repeats) 0))
-  (let ((calculated-timeout  (if delay-seconds
-                                 (truncate (/ (* +milliseconds-per-second+ delay-seconds)
-                                              (wheel-resolution wheel)))
-                                 (calculate-slot-index wheel timer))))
-    (log:info "delay: ~f, calculated-timeout: ~d" delay-seconds calculated-timeout)
-    (setf (slot-value timer 'remaining) (max 1 calculated-timeout)
-          (slot-value timer 'scheduled-p) t)
-    (install-timer wheel timer)))
+  (if (and (end timer) (< (+ (end timer) *expired-epsilon*)
+                          (get-current-universal-milliseconds)))
+      (prog1 nil
+        (log:info "Cannot schedule a timer that has already expired. Expire: ~d, Now: ~d"
+                  (universal-milliseconds->timestamp (end timer))
+                  (local-time:now)))
+      (let ((calculated-timeout  (if delay-seconds
+                                     (round (* +milliseconds-per-second+ delay-seconds) (wheel-resolution wheel))
+                                     (calculate-slot-index wheel timer))))
+        (log:info "delay: ~f, calculated-timeout: ~d" delay-seconds calculated-timeout)
+        (setf (slot-value timer 'remaining) (max 1 calculated-timeout)
+              (slot-value timer 'scheduled-p) t)
+        (install-timer wheel timer))))
 
 (defun initialize-timer-wheel (wheel)
-  "Ensure the WHEEL is stopped, then initialize the WHEEL
-context, and start the WHEEL thread."
+  "Ensure the WHEEL is stopped, then initialize the WHEEL context, and start the WHEEL thread."
   (shutdown-timer-wheel wheel)
   (initialize-timer (wheel-context wheel) ; 由于有要确保时轮处于关闭状态的必要,
 		    (wheel-resolution wheel)) ;initialize-timer也要对overrun进行重置
@@ -392,7 +386,7 @@ context, and start the WHEEL thread."
 	(bt:make-thread
 	 (lambda ()
 	   (manage-timer-wheel wheel))
-	 :name "timer-wheel")))
+	 :name "TIMER-WHEEL")))
 
 (defun manage-timer-wheel (wheel) ; 在其中进行wheel初始化判断
   "This is the main entry point of the timer WHEEL thread."
@@ -405,14 +399,11 @@ context, and start the WHEEL thread."
 (defun shutdown-timer-wheel (wheel) ; 应该对未处理任务进行标志
   "Notify the wheel thread to terminate, then wait for it."
   (setf (reset wheel) t)
-
   (shutdown-context (wheel-context wheel))
-
   (when (wheel-thread wheel)
     (when (bt:thread-alive-p (wheel-thread wheel))
       (bt:join-thread (wheel-thread wheel)))
     (setf (wheel-thread wheel) nil))
-
   (setf (reset wheel) nil))
 
 
