@@ -6,7 +6,7 @@
 
 (defun inspect-bt-timeout-context (context)
   (with-slots (resolution timeout-overrun end) context
-    (format nil "Resolution: ~d, End: ~d, Timeout-Run: ~d" resolution timeout-overrun end)))
+    (format nil "Resolution: ~d, End: ~d, Timeout-Run: ~d." resolution end timeout-overrun)))
 
 (defmethod print-object ((context bt-timeout-context) stream)
   (print-unreadable-object (context stream :type t :identity t)
