@@ -236,7 +236,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
 
 (defmethod invoke-callback ((wheel wheel) (timer timer))
   "Wrap funcall to callback, and check if it is a periodical timer in the :after method."
-  ;; if timeout is sensitive for this timer, the codes will be prefer to add here.
+  ;; if timeout is sensitive for this timer, the codes can be added here.
   (lambda ()
     (funcall (callback timer) wheel timer)))
 
