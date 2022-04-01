@@ -121,3 +121,154 @@ or a list of bindings of the form:
        (if (and ,@variables)
            ,then-form
            ,else-form))))
+
+
+;;; fifo queue apis for safe accessing
+;;; completely copied from cl-trivial-pool
+
+(defun make-queue (&optional (init-length 100) (unbound t) (name (string (gensym "QUEUE-"))))
+  "Return an unbound"
+  (declare (ignore unbound))
+  #-sbcl(declare (ignore name))
+  #+sbcl(declare (ignore init-length))
+  #+sbcl(sb-concurrency:make-queue :name name)
+  #-sbcl(cl-fast-queues:make-safe-fifo :init-length init-length :waitp nil))
+
+(defun enqueue (item queue)
+  #+sbcl(sb-concurrency:enqueue item queue)
+  #-sbcl(cl-fast-queues:enqueue item queue))
+
+(defun dequeue (queue)
+  #+sbcl(sb-concurrency:dequeue queue)
+  #-sbcl(alexandria:when-let (val (cl-fast-queues:dequeue queue))
+          (if (eq val cl-fast-queues:*underflow-flag*)
+              nil
+              val)))
+
+(defun queue-count (queue)
+  #+sbcl(sb-concurrency:queue-count queue)
+  #-sbcl(cl-fast-queues:queue-count queue))
+
+(defun queue-to-list (queue)
+  #+sbcl(sb-concurrency:list-queue-contents queue)
+  #-sbcl(cl-fast-queues:queue-to-list queue))
+
+(defun flush-queue (queue)
+  "Flush the queue to an empty queue. The returned value should be neglected."
+  (declare (optimize speed))
+  #+sbcl
+  (loop (let* ((head (sb-concurrency::queue-head queue))
+               (tail (sb-concurrency::queue-tail queue))
+               (next (cdr head)))
+          (typecase next
+            (null (return nil))
+            (cons (when (and (eq head (sb-ext:compare-and-swap (sb-concurrency::queue-head queue)
+                                                               head head))
+                             (eq nil (sb-ext:compare-and-swap (cdr (sb-concurrency::queue-tail queue))
+                                                              nil nil)))
+                    (setf (car tail) sb-concurrency::+dummy+
+                          (sb-concurrency::queue-head queue) (sb-concurrency::queue-tail queue))
+                    (return t))))))
+  #-sbcl(cl-fast-queues:queue-flush queue))
+
+(defun queue-empty-p (queue)
+  #+sbcl(sb-concurrency:queue-empty-p queue)
+  #-sbcl(cl-fast-queues:queue-empty-p queue))
+
+
+;;; atomic operations
+;;; almost completely copied from cl-trivial-pool
+
+(defun make-atomic (init-value)
+  "Return a structure that can be cas'ed"
+  #+ccl
+  (make-array 1 :initial-element init-value)
+  #-ccl
+  (cons init-value nil))
+
+(defmacro atomic-place (atomic-structure)
+  "Return value of atomic-fixnum in macro."
+  #+ccl
+  `(svref ,atomic-structure 0)
+  #-ccl
+  `(car ,atomic-structure))
+
+(defmacro atomic-incf (place &optional (diff 1))
+  "Atomic incf fixnum in `place' with `diff' and return OLD value."
+  #+sbcl
+  `(sb-ext:atomic-incf ,place ,diff)
+  #+ccl
+  `(let ((old ,place))
+     (ccl::atomic-incf-decf ,place ,diff)
+     old))
+
+(defmacro atomic-decf (place &optional (diff 1))
+  "Atomic decf fixnum in `place' with `diff' and return OLD value."
+  #+sbcl
+  `(sb-ext:atomic-decf ,place ,diff)
+  #+ccl
+  `(let ((old ,place))
+     (ccl::atomic-incf-decf ,place (- ,diff))
+     old))
+
+(defmacro compare-and-swap (place old-value new-value)
+  "Atomically stores NEW in `place' if `old-value' matches the current value of `place'.
+Two values are considered to match if they are EQ.
+return T if swap success, otherwise return NIL."
+  #+sbcl
+  (let ((old-val-var (gensym "OLD-VALUE-")))
+    ` (let ((,old-val-var ,old-value))
+        (eq ,old-val-var (sb-ext:compare-and-swap ,place ,old-val-var ,new-value))))
+  #+ccl
+  `(ccl::conditional-store ,place ,old-value ,new-value))
+
+(defmacro atomic-update (place function &rest args)
+  "Atomically swap value in `place' with `function' called and return new value."
+  #+sbcl
+  `(sb-ext:atomic-update ,place ,function ,@args)
+  #-sbcl
+  (alexandria:with-gensyms (func old-value new-value)
+    `(loop :with ,func = ,function
+           :for ,old-value = ,place
+           :for ,new-value = (funcall ,func ,old-value ,@args)
+           :until (compare-and-swap ,place ,old-value ,new-value)
+           :finally (return ,new-value))))
+
+(defmacro atomic-set (place new-value)
+  "Atomically update the `place' with `new-value'"
+  ;; (atomic-set (atomic-place (make-atomic 0)) 100)
+  `(atomic-update ,place
+                  #'(lambda (x)
+                      (declare (ignore x))
+                      ,new-value)))
+
+(defmacro atomic-peek (place)
+  "Atomically get the value of `place' without change it."
+  #+sbcl
+  `(progn
+     (sb-thread:barrier (:read))
+     ,place)
+  #-sbcl
+  (alexandria:with-gensyms (val)
+    `(loop for ,val = ,place
+           until (compare-and-swap ,place ,val ,val)
+           finally (return ,val))))
+
+(defmacro atomic-exchange (place new-value &environment env)
+  "Atomic set value in `place' to `new-value' and return OLD value."
+  #+sbcl
+  (multiple-value-bind (vars vals old new cas-form read-form)
+      (sb-ext:get-cas-expansion place env)
+    `(let* (,@(mapcar 'list vars vals)
+            (,old ,read-form))
+       (loop for ,new = ,new-value
+             until (eq ,old (setf ,old ,cas-form))
+             finally (return ,old))))
+  #-sbcl
+  (declare (ignore env))
+  #-sbcl
+  (let ((old-symbol (gensym "old")))
+    `(loop
+       for ,old-symbol fixnum = ,place
+       while (not (compare-and-swap ,place ,old-symbol ,new-value))
+       finally (return ,old-symbol))))
