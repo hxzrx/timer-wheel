@@ -7,6 +7,7 @@ This is a fork of Nick Patrick's timer-wheel <https://github.com/npatrick04/time
   :license "MIT"
   :depends-on (#:bordeaux-threads
                #:local-time
+               #:cl-fast-queues
                #:log4cl)
   :serial t
   :in-order-to ((test-op (test-op "timer-wheel.test")))
