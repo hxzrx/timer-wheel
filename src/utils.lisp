@@ -254,6 +254,19 @@ return T if swap success, otherwise return NIL."
            until (compare-and-swap ,place ,val ,val)
            finally (return ,val))))
 
+(defun peek-queue (queue)
+  (declare (optimize speed))
+  "Return the first item to be dequeued without dequeueing it"
+  #-sbcl(cl-fast-queues:queue-peek queue)
+  #+sbcl
+  (loop (let* ((head (sb-concurrency::queue-head queue))
+               (next (cdr head)))
+          (typecase next
+            (null (return nil))
+            (cons (when (compare-and-swap (sb-concurrency::queue-head queue)
+                                          head head)
+                    (return (car next))))))))
+
 (defmacro atomic-exchange (place new-value &environment env)
   "Atomic set value in `place' to `new-value' and return OLD value."
   #+sbcl
