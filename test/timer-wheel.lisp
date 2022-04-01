@@ -22,6 +22,12 @@
                   (t (error "Wrong time type: ~d" time)))))
     (tw::universal-milliseconds->timestamp (+ ut (truncate (* n 1000))))))
 
+(defun 1/100-second-before ()
+  (n-seconds-later (local-time:now) -0.01))
+
+(defun 1/100-second-after ()
+  (n-seconds-later (local-time:now) 0.01))
+
 (define-test make-wheel :parent timer-wheel
   (finish (tw::make-wheel))
   (finish (tw::make-wheel :size 11))
@@ -86,7 +92,8 @@
   (finish (tw::make-timer :end-time "2099-03-24T16:28:00-08:00"))
   (finish (tw::make-timer :end-time "2099-03-24T16:28:00.000-08:00"))
   (finish (tw::make-timer :end-time "2099-03-24T16:28:00.000000+08:00"))
-  (finish (tw::make-timer :end-time (local-time:now)))
+  (finish (tw::make-timer :end-time (1/100-second-after)))
+  (fail   (tw::make-timer :end-time (1/100-second-before)))
   (finish (tw::make-timer :end-time (tw::timestring->timestamp "2099-03-24 16:28:00")))
   (fail   (tw::make-timer :end-time "2099-03-24 16:28:99"))
   (fail   (tw::make-timer :end-time 123))
@@ -135,16 +142,15 @@
     (finish (tw::make-timer :end-time "2099-03-25 16:28:00" :repeat-times 1))
     (finish (tw::make-timer :end-time "2099-03-25 16:28:00" :repeat-times 2))
     (finish (tw::make-timer :end-time "2099-03-25 16:28:00" :repeat-times nil))
-    (finish (tw::make-timer :end-time (local-time:now) :repeat-times 1))
-    (finish (tw::make-timer :end-time (local-time:now) :repeat-times 2))
-    (finish (tw::make-timer :end-time (local-time:now) :repeat-times nil))
+    (finish (tw::make-timer :end-time (n-seconds-later (local-time:now) 0.01) :repeat-times 1))
+    (finish (tw::make-timer :end-time (n-seconds-later (local-time:now) 0.01) :repeat-times 2))
+    (finish (tw::make-timer :end-time (n-seconds-later (local-time:now) 0.01) :repeat-times nil))
     (finish (tw::make-timer :end-time "2099-03-25 16:28:00" :period-in-seconds 0.01))
     (finish (tw::make-timer :end-time "2099-03-25 16:28:00" :period-in-seconds 0.1))
     (finish (tw::make-timer :end-time "2099-03-25 16:28:00" :period-in-seconds 1))
-    (finish (tw::make-timer :end-time (local-time:now) :period-in-seconds 0.01))
-    (finish (tw::make-timer :end-time (local-time:now) :period-in-seconds 0.1))
-    (finish (tw::make-timer :end-time (local-time:now) :period-in-seconds 1))
-    (finish (tw::make-timer :end-time (local-time:now) :period-in-seconds 1))
+    (finish (tw::make-timer :end-time (n-seconds-later (local-time:now) 0.01) :period-in-seconds 0.01))
+    (finish (tw::make-timer :end-time (n-seconds-later (local-time:now) 0.01) :period-in-seconds 0.1))
+    (finish (tw::make-timer :end-time (n-seconds-later (local-time:now) 0.01) :period-in-seconds 1)) ; may fail or finish
     (fail   (tw::make-timer :repeat-times 0 :period-in-seconds 0.01))
     (finish (tw::make-timer :repeat-times 1 :period-in-seconds 0.01))
     (finish (tw::make-timer :repeat-times nil :period-in-seconds 0.01))
@@ -558,10 +564,11 @@
 ))
 
 (define-test simple-scheduling :parent timer-wheel ; the original test case of timer-wheel.test
+  (setf tw::*tick-num* 0)
   (let* ((wheel (make-wheel :size 100 :resolution 100))
 	 (timer (make-timer :callback (lambda (whl tmr)
 			                (declare (ignore whl tmr))
-                                        (format t "Callback result printing!~%"))
+                                        (format t "~d Callback result printing!~%" (local-time:now)))
                             :scheduler wheel)))
     (is = 15 (tw::calculate-future-slot 10 5 100))
     (is = 5 (tw::calculate-future-slot 90 15 100))
@@ -571,12 +578,15 @@
     (tw::schedule-timer wheel timer 1) ; the wheel's thread has just initialized, so the timer was installed in the 10th slot
     (is = 10 (tw::installed-slot timer))
     (is = 0 (remaining timer))
-    (is = 1 (length (elt (tw::slots wheel) 10)))
+    (is = 1 (tw::queue-count (svref (tw::slots wheel) 10)))
+    ;;(is = 1 (length (elt (tw::slots wheel) 10))) ; for the old list queue version
     (format t "Wait for a second to see the result~%......~%")
-    (sleep 1)))
+    (sleep 1)
+    (shutdown-timer-wheel wheel)
+    ))
 
 ;; corresponding to make-timer-checking-1
-(define-test schedul-no-arg :parent timer-wheel
+(define-test scheduler-no-arg :parent timer-wheel
   (let* ((wheel1 (make-wheel :size 10 :resolution 10))
          (wheel2 (make-wheel :size 10 :resolution 20))
          (fn     (make-callback))
