@@ -21,10 +21,10 @@
 
 (defclass wheel ()
   ((context      :accessor wheel-context    :initarg :context    :initform nil)
-   (timeout-lock :accessor timeout-lock                          :initform (bt:make-lock))
+   ;;(timeout-lock :accessor timeout-lock                          :initform (bt:make-lock))
    (thread       :accessor wheel-thread     :initarg :thread     :initform nil)
    (slots        :accessor slots            :initarg :slots      :initform nil)
-   (current-slot :accessor current-slot                          :initform 0)
+   (current-slot :accessor current-slot                          :initform (make-atomic 0))
    (resolution   :reader   wheel-resolution :initarg :resolution :initform *default-resolution*)
    (reset        :accessor reset                                 :initform nil)
    (name         :accessor name             :initarg :name       :initform (string (gensym "WHEEL-")))))
@@ -54,6 +54,10 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
 		 :context (ecase backend
 			    (:bt (make-bt-context)))
                  :name name))
+
+(defmacro get-current-slot (wheel)
+  "Return the place of the current slot of the wheel."
+  (atomic-place (current-slot wheel)))
 
 (defmethod initialize-instance :after ((wheel wheel) &key &allow-other-keys)
   (push wheel *wheel-list*))
@@ -249,15 +253,18 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   "Tick function runs all timers in current slot.
 Note that this method does not check repeats of each timer,
 so every timers enqueued should make sure they have repeats greater than zero."
-  (let ((tlist (make-queue 100)))
+  (let ((slot-queue nil)
+        (new-queue (make-queue 100))
+        (current-slot-atomic (current-slot wheel)))
     ;; Update the wheel
-    (bt:with-lock-held ((timeout-lock wheel)) ; locked so that no timer will be enqueued
-      (setf (current-slot wheel) (mod (1+ (current-slot wheel))
-				      (length (slots wheel))))
-      (rotatef tlist (svref (slots wheel) (current-slot wheel))))
+    ;;(bt:with-lock-held ((timeout-lock wheel)) ; locked so that no timer will be enqueued
+    (atomic-set (atomic-place current-slot-atomic)
+                (mod (1+ (atomic-place current-slot-atomic)) (length (slots wheel))))
+    (setf slot-queue (atomic-exchange (svref (slots wheel) (atomic-place current-slot-atomic)) new-queue))
+    #+:ignore(rotatef tlist (svref (slots wheel) (get-current-slot wheel)))
     ;; Then run the timers outside the lock
     ;;(dolist (timer tlist)
-    (loop for timer = (dequeue tlist)
+    (loop for timer = (dequeue slot-queue)
           while timer
           do (when (eq :ok (status timer)) ; currently only 2 status, :ok and :canceled
                (if (zerop (remaining timer))
@@ -265,7 +272,8 @@ so every timers enqueued should make sure they have repeats greater than zero."
 	           (install-timer wheel timer))))))
 
 (defun calculate-future-slot (current-slot remaining slots)
-  (mod (+ current-slot (max 1 remaining )) ;minimum resolution of 1 tick , 最小为1是为了防止立即要执行的任务被安排到下一个周期.
+  ;; minimum resolution of 1 tick to make sure an urgent task runs in the next wheel period
+  (mod (+ current-slot (max 1 remaining ))
        slots))
 
 (defmethod install-timer :before (wheel timer)
@@ -284,7 +292,7 @@ else enqueue the timer to the current slot."
     (if (< (remaining timer) max-wheel-ticks) ; will be called within one round of the wheel
 	;;(bt:with-lock-held ((timeout-lock wheel)) ; 注意这里加了锁
 	(let ((future-slot (calculate-future-slot ; calculate the accurate slot index
-			    (current-slot wheel)
+			    (atomic-place (current-slot wheel))
 			    (remaining timer)
 			    (length (slots wheel)))))
 	  (setf (remaining timer) 0                ; set to 0, will be called within a round
@@ -292,8 +300,8 @@ else enqueue the timer to the current slot."
 	  (enqueue timer (svref (slots wheel) future-slot))) ; enqueue is thread safe
 	;; The timer needs to be reinstalled later
 	(progn (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
-	       (enqueue timer (svref (slots wheel) (current-slot wheel))) ; enqueue the timer to the current slot
-	       (setf (installed-slot timer) (current-slot wheel))))  ; the accurate will be re-caculated in the future
+	       (enqueue timer (svref (slots wheel) (atomic-place (current-slot wheel)))) ; enqueue the timer to the current slot
+	       (setf (installed-slot timer) (atomic-place (current-slot wheel))))) ; the accurate will be re-caculated in the future
     t))
 
 (defmethod reinstall-timer ((wheel wheel) (timer timer))
@@ -305,7 +313,7 @@ else enqueue the timer to the current slot."
     (if (< (remaining timer) max-wheel-ticks)
         ;;(bt:with-lock-held ((timeout-lock wheel))
         (let ((future-slot (calculate-future-slot
-                            (current-slot wheel)
+                            (atomic-place (current-slot wheel))
                             (remaining timer)
                             (length (slots wheel)))))
           (setf (remaining timer) 0
@@ -313,8 +321,8 @@ else enqueue the timer to the current slot."
           (enqueue timer (svref (slots wheel) future-slot)))
         ;; The timer needs to be reinstalled later
         (progn (decf (remaining timer) max-wheel-ticks)
-               (enqueue timer (svref (slots wheel) (current-slot wheel)))
-               (setf (installed-slot timer) (current-slot wheel))))
+               (enqueue timer (svref (slots wheel) (atomic-place (current-slot wheel))))
+               (setf (installed-slot timer) (atomic-place (current-slot wheel)))))
     t))
 
 (defmethod uninstall-timer ((wheel wheel) (timer timer))
