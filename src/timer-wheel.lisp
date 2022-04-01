@@ -12,7 +12,7 @@
 *expired-epsilon* makes an reasonable tolerate to schedule them.")
 
 (defparameter *wheel-list* nil
-  "A list to keep all wheel.")
+  "A list to keep all wheels.")
 
 (define-condition unscheduled (error)
   ((timer :initarg :timer
@@ -282,16 +282,15 @@ else enqueue the timer to the current slot."
     (error 'unscheduled :timer timer))
   (let ((max-wheel-ticks (length (slots wheel))))
     (if (< (remaining timer) max-wheel-ticks) ; will be called within one round of the wheel
-	(bt:with-lock-held ((timeout-lock wheel)) ; 注意这里加了锁
-	  (let ((future-slot (calculate-future-slot ; calculate the accurate slot index
-			      (current-slot wheel)
-			      (remaining timer)
-			      (length (slots wheel)))))
-	    (setf (remaining timer) 0                ; set to 0, will be called within a round
-		  (installed-slot timer) future-slot)
-	    (enqueue timer (svref (slots wheel) future-slot))))
+	;;(bt:with-lock-held ((timeout-lock wheel)) ; 注意这里加了锁
+	(let ((future-slot (calculate-future-slot ; calculate the accurate slot index
+			    (current-slot wheel)
+			    (remaining timer)
+			    (length (slots wheel)))))
+	  (setf (remaining timer) 0                ; set to 0, will be called within a round
+		(installed-slot timer) future-slot)
+	  (enqueue timer (svref (slots wheel) future-slot))) ; enqueue is thread safe
 	;; The timer needs to be reinstalled later
-        ;; 为何没加锁?? 如果在其它线程执行本函数可能会有竞争
 	(progn (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
 	       (enqueue timer (svref (slots wheel) (current-slot wheel))) ; enqueue the timer to the current slot
 	       (setf (installed-slot timer) (current-slot wheel))))  ; the accurate will be re-caculated in the future
@@ -304,14 +303,14 @@ else enqueue the timer to the current slot."
         (slot-value timer 'scheduled-p) t)
   (let ((max-wheel-ticks (length (slots wheel))))
     (if (< (remaining timer) max-wheel-ticks)
-        (bt:with-lock-held ((timeout-lock wheel))
-          (let ((future-slot (calculate-future-slot
-                              (current-slot wheel)
-                              (remaining timer)
-                              (length (slots wheel)))))
-            (setf (remaining timer) 0
-                  (installed-slot timer) future-slot)
-            (enqueue timer (svref (slots wheel) future-slot))))
+        ;;(bt:with-lock-held ((timeout-lock wheel))
+        (let ((future-slot (calculate-future-slot
+                            (current-slot wheel)
+                            (remaining timer)
+                            (length (slots wheel)))))
+          (setf (remaining timer) 0
+                (installed-slot timer) future-slot)
+          (enqueue timer (svref (slots wheel) future-slot)))
         ;; The timer needs to be reinstalled later
         (progn (decf (remaining timer) max-wheel-ticks)
                (enqueue timer (svref (slots wheel) (current-slot wheel)))
