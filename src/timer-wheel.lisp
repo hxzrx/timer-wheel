@@ -11,6 +11,9 @@
   "For those timers which has exipred time specified,
 *expired-epsilon* makes an reasonable tolerate to schedule them.")
 
+(defparameter *wheel-list* nil
+  "A list to keep all wheel.")
+
 (define-condition unscheduled (error)
   ((timer :initarg :timer
 	  :reader unscheduled-timer)))
@@ -46,12 +49,14 @@
   "Make a timer wheel with SIZE slots, with a millisecond RESOLUTION,
 and BACKEND of :BT (bordeaux-threads... the only backend)."
   (make-instance 'wheel
-		 :slots (make-array size :initial-element nil)
+		 :slots (make-array size :initial-contents (loop for i below size collect (make-queue 100)))
 		 :resolution resolution
 		 :context (ecase backend
 			    (:bt (make-bt-context)))
                  :name name))
 
+(defmethod initialize-instance :after ((wheel wheel) &key &allow-other-keys)
+  (push wheel *wheel-list*))
 
 (defclass timer ()
   ((remaining      :accessor remaining      :initarg :remaining  :initform nil)
@@ -94,9 +99,9 @@ bindings: specials bindings, may be useful in threads, NOT in use currently.
 "))
 
 (defun inspect-timer (timer)
-  (with-slots (name remaining result scheduled-p timeout-p status start period repeats end bindings scheduler) timer
-    (format nil "Name: ~d, Remaining: ~d ticks, Scheduled-p: ~d, Timeout-p: ~d, Status: ~s, Start time: ~d, Period: ~d, Repeats: ~d times left, End time: ~d, Bindings: ~d, Result: ~d, Scheduler: ~d"
-            name remaining scheduled-p timeout-p status
+  (with-slots (name remaining installed-slot result scheduled-p timeout-p status start period repeats end bindings scheduler) timer
+    (format nil "Name: ~d, Remaining: ~d ticks, Scheduled-p: ~d, Installed to slot: ~d, Timeout-p: ~d, Status: ~s, Start time: ~d, Period: ~d, Repeats: ~d times left, End time: ~d, Bindings: ~d, Result: ~d, Scheduler: ~d"
+            name remaining scheduled-p installed-slot timeout-p status
             (if start (universal-milliseconds->timestamp start) nil)
             (if period (if scheduler
                            (format nil "~d ticks" period)
@@ -244,18 +249,20 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   "Tick function runs all timers in current slot.
 Note that this method does not check repeats of each timer,
 so every timers enqueued should make sure they have repeats greater than zero."
-  (let (tlist)
+  (let ((tlist (make-queue 100)))
     ;; Update the wheel
     (bt:with-lock-held ((timeout-lock wheel)) ; locked so that no timer will be enqueued
       (setf (current-slot wheel) (mod (1+ (current-slot wheel))
 				      (length (slots wheel))))
       (rotatef tlist (svref (slots wheel) (current-slot wheel))))
     ;; Then run the timers outside the lock
-    (dolist (timer tlist)
-      (when (eq :ok (status timer)) ; currently only 2 status, :ok and :canceled
-        (if (zerop (remaining timer))
-            (funcall (invoke-callback wheel timer))
-	    (install-timer wheel timer))))))
+    ;;(dolist (timer tlist)
+    (loop for timer = (dequeue tlist)
+          while timer
+          do (when (eq :ok (status timer)) ; currently only 2 status, :ok and :canceled
+               (if (zerop (remaining timer))
+                   (funcall (invoke-callback wheel timer))
+	           (install-timer wheel timer))))))
 
 (defun calculate-future-slot (current-slot remaining slots)
   (mod (+ current-slot (max 1 remaining )) ;minimum resolution of 1 tick , 最小为1是为了防止立即要执行的任务被安排到下一个周期.
@@ -281,19 +288,12 @@ else enqueue the timer to the current slot."
 			      (remaining timer)
 			      (length (slots wheel)))))
 	    (setf (remaining timer) 0                ; set to 0, will be called within a round
-		  (installed-slot timer) future-slot ;
-		  ;; Install the timer at the end of the list
-		  ;; This ensures that timer evaluation order is FIFO.
-		  ;; TODO: Actually use a FIFO instead of a list
-		  (svref (slots wheel) future-slot)    ; use svref to speedup the accessing
-		  (append (svref (slots wheel) future-slot) ; append相当于对fifo队列的enqueue操作
-			  (list timer)))
-	    ;; (push timer (elt (slots wheel) future-slot))
-	    ))
+		  (installed-slot timer) future-slot)
+	    (enqueue timer (svref (slots wheel) future-slot))))
 	;; The timer needs to be reinstalled later
         ;; 为何没加锁?? 如果在其它线程执行本函数可能会有竞争
 	(progn (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
-	       (push timer (svref (slots wheel) (current-slot wheel))) ; enqueue the timer to the current slot
+	       (enqueue timer (svref (slots wheel) (current-slot wheel))) ; enqueue the timer to the current slot
 	       (setf (installed-slot timer) (current-slot wheel))))  ; the accurate will be re-caculated in the future
     t))
 
@@ -310,18 +310,11 @@ else enqueue the timer to the current slot."
                               (remaining timer)
                               (length (slots wheel)))))
             (setf (remaining timer) 0
-                  (installed-slot timer) future-slot
-                  ;; Install the timer at the end of the list
-                  ;; This ensures that timer evaluation order is FIFO.
-                  ;; TODO: Actually use a FIFO instead of a list
-                  (svref (slots wheel) future-slot)
-                  (append (svref (slots wheel) future-slot)
-                          (list timer)))
-            ;; (push timer (elt (slots wheel) future-slot))
-            ))
+                  (installed-slot timer) future-slot)
+            (enqueue timer (svref (slots wheel) future-slot))))
         ;; The timer needs to be reinstalled later
         (progn (decf (remaining timer) max-wheel-ticks)
-               (push timer (svref (slots wheel) (current-slot wheel)))
+               (enqueue timer (svref (slots wheel) (current-slot wheel)))
                (setf (installed-slot timer) (current-slot wheel))))
     t))
 
@@ -363,9 +356,9 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
         (log:info "Cannot schedule a timer that has already expired. Expire: ~d, Now: ~d"
                   (universal-milliseconds->timestamp (end timer))
                   (local-time:now)))
-      (let ((calculated-timeout  (if delay-seconds
-                                     (round (* +milliseconds-per-second+ delay-seconds) (wheel-resolution wheel))
-                                     (calculate-slot-index wheel timer))))
+      (let ((calculated-timeout (if delay-seconds
+                                    (round (* +milliseconds-per-second+ delay-seconds) (wheel-resolution wheel))
+                                    (calculate-slot-index wheel timer))))
         (setf (slot-value timer 'remaining) (max 1 calculated-timeout)
               (slot-value timer 'scheduled-p) t)
         (install-timer wheel timer))))
