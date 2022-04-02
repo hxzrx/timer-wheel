@@ -29,6 +29,6 @@
       (tw:schedule-timer wheel timer)
       (dotimes (i times)
 	(wait)
-	(format t "Doing some heavy duty work ~D~%" i)
+	(format t "~&Doing some heavy duty work ~D~%" i)
 	;; Try removing force-output...
 	(force-output)))))

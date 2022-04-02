@@ -22,7 +22,7 @@
                         (tw:schedule-timer *verify-wheel* (gen-timer)))))
   (sleep (* threads-num 0.0001))
   (if (= threads-num (tw::atomic-place *atomic-counter*))
-      (format t "PASSED!~%")
-      (format t "FAILED~%")))
+      (format t "~&PASSED!~%")
+      (format t "~&FAILED~%")))
 
 (verify-scheduler-threads 10000)

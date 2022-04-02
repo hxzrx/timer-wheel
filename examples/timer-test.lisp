@@ -19,7 +19,7 @@
                          :scheduler wheel))
 	 (printer-timer (tw:make-timer
 			 :callback (lambda (wheel timer)
-			             (format out "Tick: ~D~%" counter)
+			             (format out "~&Tick: ~D~%" counter)
 			             (force-output out)
 			             (tw:schedule-timer wheel timer print-interval-sec))
                          :scheduler wheel)))
