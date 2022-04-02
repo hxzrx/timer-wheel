@@ -16,6 +16,7 @@
   "Return a data structure for managing ticks with BORDEAUX-THREADS"
   (make-instance 'bt-timeout-context))
 
+#+:ignore
 (defun current-milliseconds () ; wall time has been utilized and this function is deposited
   "Utility function to get the current time in milliseconds."
   (declare (optimize speed))
@@ -28,7 +29,7 @@
   "Called from the wheel thread."
   ;; Initialize the endpoint
   (setf (context-resolution context) resolution-milliseconds ; 需要重置overrun, 原因见initialize-timer-wheel函数
-	(context-end context) (current-milliseconds)))
+	(context-end context) (get-current-universal-milliseconds)))
 
 (defun shutdown-context (context)
   (declare (ignore context)))
