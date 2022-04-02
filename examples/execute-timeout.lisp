@@ -26,20 +26,21 @@
 (defun execute-timeout (thunk timeout)
   ;; Reset the result for recomputing things
   (setf the-result 'not-computed)
-  
-  (let* ((wheel (tw:make-wheel))
+
+  (let* ((wheel (tw:make-wheel :size 10 :resolution 100))
 	 (count 0)
-	 (timer (tw:make-timer #'timeout-handler))
+	 (timer (tw:make-timer :callback #'timeout-handler :scheduler wheel))
 	 (counter (tw:make-timer
-		   (lambda (whl tmr)
-		     (incf count)
-		     (tw:schedule-timer whl tmr :ticks 1)))))
-    
+		   :callback (lambda (whl tmr)
+		               (incf count)
+		               (tw:schedule-timer whl tmr  0.1))
+                   :scheduler wheel)))
+
     ;; Start processing, and then shutdown gracefully
     (tw:with-timer-wheel wheel
-      (tw:schedule-timer wheel timer :seconds timeout)
-      (tw:schedule-timer wheel counter :ticks 1)
-      
+      (tw:schedule-timer wheel timer timeout)
+      (tw:schedule-timer wheel counter 0.1)
+
       (let ((worker (bt:make-thread (calc-result thunk) :name "Calculating Thread")))
 
 	(bt:with-lock-held (lock)
@@ -56,6 +57,3 @@
 ;; (42 1)
 ;; CL-USER> (timer-wheel.examples:execute-timeout (lambda () (sleep 1) 42) 0.5)
 ;; (TIMER-WHEEL.EXAMPLES::TIMEOUT NIL)
-
-
-
