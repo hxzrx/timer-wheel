@@ -1,12 +1,3 @@
-# 原始Timer-Wheel库的不足之处
-1. 不能调度循环任务;
-2. 不能直接设置UT时任务;
-3. 时轮线程未做错误处理, 一旦出现错误会影响所有未执行的任务.
-4. 关闭时轮时应该给未执行的任务进行标注并清空时间片槽位, 仍然需要计时器的状态槽位(取消, 等待, 运行, 超时, 完成), 目前只有unscheduled状态, 在remaining槽位. 这种关闭实际上是重置.
-5. 不能说是不足, 在某些情况下, 计时任务可在多线程环境下执行, 但所有任务都运行与时轮线程, 若任务有IO瓶颈则很容易导致后面任务超时.
-6. 同样也不是不足, 但允许荷载函数接收参数会更方便.
-7. with-timeout功能, 在多久后调度某任务.
-
 # Timer Wheel
 A portable Common Lisp timer wheel implementation.  A timer wheel provides an efficient mechanism to implement tick-based timer routines.  The portable part of this is the backend using Boreaux Threads to run a background thread operating the wheel.
 
