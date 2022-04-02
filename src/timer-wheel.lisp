@@ -414,7 +414,7 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
          (shutdown-timer-wheel ,wheel$)))))
 
 (defmacro with-timeout ((wheel timeout &optional (scheduler (gensym)) (timer (gensym))) &body body)
-  "Execute body after TIMEOUT seconds and return the timer.
+  "Encapsule BODY into a timer and schedule it with TIMEOUT seconds and return the timer object.
 TIMEOUT is a positive real number in seconds.
 SCHEDULER and TIMER are symbols which can be used in BODY as the returned timer's callback's arguments"
   ;; (defparameter *wheel* (make-wheel))

@@ -85,9 +85,8 @@ See the examples below."
   (multiple-value-bind (sec msec) (floor universal 1000)
     (local-time:universal-to-timestamp sec :nsec (* msec 1000000))))
 
-(defmacro when-let (bindings &body forms)
-  "alexandria/alexandria-1/binding.lisp
-BINDINGS must be either single binding of the form:
+(defmacro when-let (bindings &body forms) ; alexandria's when-let
+  "BINDINGS must be either single binding of the form:
  (variable initial-form)
 or a list of bindings of the form:
  ((variable-1 initial-form-1)
@@ -103,9 +102,8 @@ or a list of bindings of the form:
        (when (and ,@variables)
          ,@forms))))
 
-(defmacro if-let (bindings &body (then-form &optional else-form))
-  "alexandria/alexandria-1/binding.lisp
-BINDINGS must be either single binding of the form:
+(defmacro if-let (bindings &body (then-form &optional else-form)) ; alexandria's if-let
+  "BINDINGS must be either single binding of the form:
  (variable initial-form)
 or a list of bindings of the form:
  ((variable-1 initial-form-1)
