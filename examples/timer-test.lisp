@@ -15,12 +15,14 @@
 	 (counter-timer (tw:make-timer
 			 :callback(lambda (wheel timer)
 			            (incf counter)
+                                    (incf (tw::repeats timer)) ; incf so that tmr can be scheduled again
 			            (tw:schedule-timer wheel timer 0.1))
                          :scheduler wheel))
 	 (printer-timer (tw:make-timer
 			 :callback (lambda (wheel timer)
 			             (format out "~&Tick: ~D~%" counter)
 			             (force-output out)
+                                     (incf (tw::repeats timer)) ; incf so that tmr can be scheduled again
 			             (tw:schedule-timer wheel timer print-interval-sec))
                          :scheduler wheel)))
 

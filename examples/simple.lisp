@@ -18,8 +18,6 @@
     (tw:schedule-timer wheel timer period-sec)))
 
 (defun simple (&optional (period-sec 0.1) (times 10))
-  ;; run this should comment the same line below in the function of schedule-timer.
-  ;; (assert (> (slot-value timer 'repeats) 0))
   (let* ((wheel (tw:make-wheel :size 100 :resolution 100))
 	 (timer (tw:make-timer :callback (make-timeout period-sec)
                                :scheduler wheel
