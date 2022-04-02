@@ -347,7 +347,8 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
   then called it with schedule-timer and left delay-seconds unsupplied."
   (assert (or (null delay-seconds)
               (and (realp delay-seconds) (> delay-seconds 0))))
-  (assert (> (slot-value timer 'repeats) 0))
+  (when (<= (repeats timer) 0)
+    (return-from schedule-timer nil))
   (unless (eq wheel (scheduler timer))
     (attach-scheduler timer wheel))
   (if (and (end timer) (< (+ (end timer) *expired-epsilon*)
