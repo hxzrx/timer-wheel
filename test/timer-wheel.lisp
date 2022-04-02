@@ -991,3 +991,25 @@
     (is = 30 (tw::result timer))
     (format t "timer: ~d~%" timer)
     ))
+
+(define-test schedule-timer-simply :parent timer-wheel
+  (let* ((wheel (make-wheel))
+         (timer1 (make-timer :callback (make-callback)))
+         (timer2 (make-timer :callback (make-callback) :scheduler wheel)))
+    (false (schedule-timer-simply timer1))
+    (true  (schedule-timer-simply timer2))
+    (finish (attach-scheduler timer1 wheel))
+    (true  (schedule-timer-simply timer1))))
+
+(define-test with-timer-wheel :parent timer-wheel
+  (let* ((wheel (make-wheel)))
+    (is = 6 (with-timer-wheel wheel (+ 1 2 3)))
+    (is = 6 (with-timer-wheel (make-wheel) (+ 1 2 3)))))
+
+(define-test with-timeout :parent timer-wheel
+  (let* ((wheel (make-wheel)))
+    (finish (with-timeout (wheel 1) (format t "Test with-timeout!~%")))
+    (finish (with-timeout (wheel 1 schedul tim)
+              (format t "Test with-timeout, scheduler: ~d, timer: ~d.~%" (tw::name schedul) (tw::name tim))))
+    (finish (with-timeout ((make-wheel) 0.00001 schedul tim)
+              (format t "Test with-timeout, scheduler: ~d, timer: ~d.~%" (tw::name schedul) (tw::name tim))))))
