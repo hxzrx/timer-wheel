@@ -380,8 +380,8 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
 (defun initialize-timer-wheel (wheel)
   "Ensure the WHEEL is stopped, then initialize the WHEEL context, and start the WHEEL thread."
   (shutdown-timer-wheel wheel)
-  (initialize-timer (wheel-context wheel) ; 由于有要确保时轮处于关闭状态的必要,
-		    (wheel-resolution wheel)) ;initialize-timer也要对overrun进行重置
+  (initialize-timer (wheel-context wheel)
+		    (wheel-resolution wheel))
   (setf (wheel-thread wheel)
 	(bt:make-thread
 	 (lambda ()
@@ -403,15 +403,38 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
   (when (wheel-thread wheel)
     (when (bt:thread-alive-p (wheel-thread wheel))
       (bt:join-thread (wheel-thread wheel)))
-    (setf (wheel-thread wheel) nil))
+    (setf (wheel-thread wheel) nil)
+    (loop for tick-slot across (slots wheel)
+          do (loop for timer = (dequeue tick-slot)
+                   while timer
+                   do (uninstall-timer wheel timer))))
   (setf (reset wheel) nil))
 
 
 (defmacro with-timer-wheel (wheel &body body)
   "Execute BODY after initializing WHEEL, then
 clean up by shutting WHEEL down after leaving the scope."
-  `(unwind-protect
-	(progn
-	  (initialize-timer-wheel ,wheel)
-	  ,@body)
-     (shutdown-timer-wheel ,wheel)))
+  (let ((wheel$ (gensym))) ; avoid eval wheel twice if wheel is some form like (make-wheel)
+    `(let ((,wheel$ ,wheel))
+       (unwind-protect
+	    (progn
+	      (initialize-timer-wheel ,wheel$)
+	      ,@body)
+         (shutdown-timer-wheel ,wheel$)))))
+
+(defmacro with-timeout ((wheel timeout &optional (scheduler (gensym)) (timer (gensym))) &body body)
+  "Execute body after TIMEOUT seconds and return the timer.
+TIMEOUT is a positive real number in seconds.
+SCHEDULER and TIMER are symbols which can be used in BODY as the returned timer's callback's arguments"
+  ;; (defparameter *wheel* (make-wheel))
+  ;; (with-timeout (*wheel* 1) (format t "with timeout!~%"))
+  ;; (with-timeout (*wheel* 1 schedul tim) (format t "Scheduler: ~d, timer: ~d.~%" (name schedul) (name tim)))
+  ;; (with-timeout ((make-wheel) 0.00001 schedul tim) (format t "Scheduler: ~d, timer: ~d.~%" (name schedul) (name tim)))
+  (let ((wheel$ (gensym)))
+    `(let* ((,wheel$ ,wheel)
+            (fn (lambda (,scheduler ,timer)
+                  (declare (ignorable ,scheduler ,timer))
+                  ,@body))
+            (new-timer (make-timer :callback fn :scheduler ,wheel$)))
+       (schedule-timer ,wheel$ new-timer ,timeout)
+       new-timer)))
