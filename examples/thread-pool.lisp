@@ -1,4 +1,3 @@
-(ql:quickload :cl-trivial-pool)
 (in-package #:timer-wheel.examples)
 
 (defun test-thread-pool ()
@@ -16,5 +15,7 @@
     (sleep 0.11)
     (let ((result (car (tpool:get-result work))))
       (if (= 6 result)
-          (format t "~&Success. Result = ~d!~%" result)
-          (format t "~&Fail. Result = ~d!~%" result)))))
+          (format t "~&Thread pool testing succeed. Result = ~d!~%" result)
+          (format t "~&Thread pool testing failed. Result = ~d!~%" result)))))
+
+(test-thread-pool)
