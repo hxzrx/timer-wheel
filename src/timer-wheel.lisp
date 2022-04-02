@@ -229,11 +229,11 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   (:documentation "Add TIMER to the WHEEL schedule again."))
 (defgeneric uninstall-timer (wheel timer)
   (:documentation "Remove TIMER from the WHEEL schedule."))
-(defgeneric tick (wheel)
-  (:documentation "Operate one tick of the wheel scedule."))
+(defgeneric invoke-callback (wheel timer)
+  (:documentation "Wrap funcall to callback, and check if it is a periodical timer in the :after method."))
 
 (defmethod invoke-callback ((wheel wheel) (timer timer))
-  "Wrap funcall to callback, and check if it is a periodical timer in the :after method."
+  "Wrap funcall to callback, the purpose of this method is to check and then reinstall a periodical timer."
   ;; if timeout is sensitive for this timer, the related codes can be added here.
   (lambda ()
     (funcall (callback timer) wheel timer)))
@@ -246,10 +246,11 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
           (log:info "The timer has expired: ~d" timer)
           (reinstall-timer wheel timer)))))
 
-(defmethod tick ((wheel wheel))
+(defun tick (wheel)
   "Tick function runs all timers in current slot.
-Note that this method does not check repeats of each timer,
-so every timers enqueued should make sure they have repeats greater than zero."
+Note that this method does not check repeats of the timers,
+so every timers enqueued should make sure they have repeats greater than zero,
+or they will run once even if their repeats less than zero."
   (let ((slot-queue nil)
         (new-queue (make-queue 100))
         (current-slot-atomic (current-slot wheel)))
@@ -401,7 +402,6 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
                    while timer
                    do (uninstall-timer wheel timer))))
   (setf (reset wheel) nil))
-
 
 (defmacro with-timer-wheel (wheel &body body)
   "Execute BODY after initializing WHEEL, then clean up by shutting WHEEL down after leaving the scope."
