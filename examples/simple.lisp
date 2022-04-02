@@ -12,22 +12,23 @@
   (bt:with-lock-held (tick-lock)
     (bt:condition-wait tick-cv tick-lock)))
 
-(defun make-timeout (period-ms)
+(defun make-timeout (period-sec)
   (lambda (wheel timer)
     (release)
-    (tw:schedule-timer wheel timer :milliseconds period-ms)))
+    (tw:schedule-timer wheel timer period-sec)))
 
-(defun simple (&optional (period-ms 100) (times 10))
-  (let* ((wheel (tw:make-wheel 100 100))
-	 (timer (tw:make-timer (make-timeout period-ms))))
-    
+(defun simple (&optional (period-sec 0.1) (times 10))
+  ;; run this should comment the same line below in the function of schedule-timer.
+  ;; (assert (> (slot-value timer 'repeats) 0))
+  (let* ((wheel (tw:make-wheel :size 100 :resolution 100))
+	 (timer (tw:make-timer :callback (make-timeout period-sec)
+                               :scheduler wheel
+                               :period-in-seconds period-sec)))
     ;; Start processing, and then shutdown gracefully
     (tw:with-timer-wheel wheel
-      (tw:schedule-timer wheel timer :milliseconds period-ms)
-
+      (tw:schedule-timer wheel timer)
       (dotimes (i times)
 	(wait)
 	(format t "Doing some heavy duty work ~D~%" i)
-
 	;; Try removing force-output...
 	(force-output)))))
