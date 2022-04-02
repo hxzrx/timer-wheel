@@ -4,7 +4,9 @@
   :description "Examples for the timer wheel library."
   :author "He Xiang-zhi <xz.he@qq.com>"
   :license "MIT"
-  :depends-on (#:bordeaux-threads #:timer-wheel)
+  :depends-on (#:bordeaux-threads
+               #:timer-wheel
+               #:cl-trivial-pool)
   :serial t
   :components ((:module "examples"
 		:components
@@ -12,5 +14,6 @@
 		 (:file "timer-test")
 		 (:file "simple")
 		 (:file "execute-timeout")
-                 (:file "perform")
-                 (:file "verify-threads")))))
+                 (:file "verify-threads")
+                 (:file "thread-pool")
+                 (:file "perform")))))
