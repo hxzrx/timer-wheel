@@ -11,7 +11,7 @@
   "For those timers which has exipred time specified,
 *expired-epsilon* makes an reasonable tolerate to schedule them.")
 
-(defparameter *wheel-list* nil
+(defvar *wheel-list* nil
   "A list to keep all wheels.")
 
 (define-condition unscheduled (error)
@@ -21,7 +21,6 @@
 
 (defclass wheel ()
   ((context      :accessor wheel-context    :initarg :context    :initform nil)
-   ;;(timeout-lock :accessor timeout-lock                          :initform (bt:make-lock))
    (thread       :accessor wheel-thread     :initarg :thread     :initform nil)
    (slots        :accessor slots            :initarg :slots      :initform nil)
    (current-slot :accessor current-slot                          :initform (make-atomic 0))
@@ -54,10 +53,6 @@ and BACKEND of :BT (bordeaux-threads... the only backend)."
 		 :context (ecase backend
 			    (:bt (make-bt-context)))
                  :name name))
-
-(defmacro get-current-slot (wheel)
-  "Return the place of the current slot of the wheel."
-  (atomic-place (current-slot wheel)))
 
 (defmethod initialize-instance :after ((wheel wheel) &key &allow-other-keys)
   (push wheel *wheel-list*))
@@ -230,6 +225,8 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
 
 (defgeneric install-timer (wheel timer)
   (:documentation "Add TIMER to the WHEEL schedule."))
+(defgeneric reinstall-timer (wheel timer)
+  (:documentation "Add TIMER to the WHEEL schedule again."))
 (defgeneric uninstall-timer (wheel timer)
   (:documentation "Remove TIMER from the WHEEL schedule."))
 (defgeneric tick (wheel)
@@ -237,7 +234,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
 
 (defmethod invoke-callback ((wheel wheel) (timer timer))
   "Wrap funcall to callback, and check if it is a periodical timer in the :after method."
-  ;; if timeout is sensitive for this timer, the codes can be added here.
+  ;; if timeout is sensitive for this timer, the related codes can be added here.
   (lambda ()
     (funcall (callback timer) wheel timer)))
 
@@ -257,12 +254,9 @@ so every timers enqueued should make sure they have repeats greater than zero."
         (new-queue (make-queue 100))
         (current-slot-atomic (current-slot wheel)))
     ;; Update the wheel
-    ;;(bt:with-lock-held ((timeout-lock wheel)) ; locked so that no timer will be enqueued
     (atomic-set (atomic-place current-slot-atomic)
                 (mod (1+ (atomic-place current-slot-atomic)) (length (slots wheel))))
     (setf slot-queue (atomic-exchange (svref (slots wheel) (atomic-place current-slot-atomic)) new-queue))
-    #+:ignore(rotatef tlist (svref (slots wheel) (get-current-slot wheel)))
-    ;; Then run the timers outside the lock
     ;;(dolist (timer tlist)
     (loop for timer = (dequeue slot-queue)
           while timer
@@ -277,7 +271,8 @@ so every timers enqueued should make sure they have repeats greater than zero."
        slots))
 
 (defmethod install-timer :before (wheel timer)
-  ;; this check can be moved to the :after method initialize-instance of wheel
+  ;; This check can be moved to the :after method initialize-instance of wheel, or before manage-timer-wheel's loop.
+  ;; But it's reasonable to check here to make sure the wheel will continue if the thread exits unexpectly.
   (declare (ignore timer))
   (unless (wheel-thread wheel)
     (initialize-timer-wheel wheel)))
@@ -290,7 +285,6 @@ else enqueue the timer to the current slot."
     (error 'unscheduled :timer timer))
   (let ((max-wheel-ticks (length (slots wheel))))
     (if (< (remaining timer) max-wheel-ticks) ; will be called within one round of the wheel
-	;;(bt:with-lock-held ((timeout-lock wheel)) ; 注意这里加了锁
 	(let ((future-slot (calculate-future-slot ; calculate the accurate slot index
 			    (atomic-place (current-slot wheel))
 			    (remaining timer)
@@ -311,7 +305,6 @@ else enqueue the timer to the current slot."
         (slot-value timer 'scheduled-p) t)
   (let ((max-wheel-ticks (length (slots wheel))))
     (if (< (remaining timer) max-wheel-ticks)
-        ;;(bt:with-lock-held ((timeout-lock wheel))
         (let ((future-slot (calculate-future-slot
                             (atomic-place (current-slot wheel))
                             (remaining timer)
@@ -319,7 +312,6 @@ else enqueue the timer to the current slot."
           (setf (remaining timer) 0
                 (installed-slot timer) future-slot)
           (enqueue timer (svref (slots wheel) future-slot)))
-        ;; The timer needs to be reinstalled later
         (progn (decf (remaining timer) max-wheel-ticks)
                (enqueue timer (svref (slots wheel) (atomic-place (current-slot wheel))))
                (setf (installed-slot timer) (atomic-place (current-slot wheel)))))
@@ -388,15 +380,15 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
 	   (manage-timer-wheel wheel))
 	 :name "TIMER-WHEEL")))
 
-(defun manage-timer-wheel (wheel) ; 在其中进行wheel初始化判断
+(defun manage-timer-wheel (wheel)
   "This is the main entry point of the timer WHEEL thread."
-  (loop (wait-for-timeout (wheel-context wheel)) ; 先调用wait-for-timeout是为了校准时间
+  (loop (wait-for-timeout (wheel-context wheel)) ; invoke wait-for-timeout to adjust the time
         (when (reset wheel)
           (return))
         ;; Do the things!
         (tick wheel)))
 
-(defun shutdown-timer-wheel (wheel) ; 应该对未处理任务进行标志
+(defun shutdown-timer-wheel (wheel)
   "Notify the wheel thread to terminate, then wait for it."
   (setf (reset wheel) t)
   (shutdown-context (wheel-context wheel))
@@ -412,8 +404,7 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
 
 
 (defmacro with-timer-wheel (wheel &body body)
-  "Execute BODY after initializing WHEEL, then
-clean up by shutting WHEEL down after leaving the scope."
+  "Execute BODY after initializing WHEEL, then clean up by shutting WHEEL down after leaving the scope."
   (let ((wheel$ (gensym))) ; avoid eval wheel twice if wheel is some form like (make-wheel)
     `(let ((,wheel$ ,wheel))
        (unwind-protect
