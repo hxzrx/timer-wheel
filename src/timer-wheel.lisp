@@ -215,6 +215,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   (setf (slot-value timer 'scheduler) new-scheduler)
   timer)
 
+(declaim (inline get-real-period))
 (defmethod get-real-period ((timer timer))
   "Return the timers period in milliseconds."
   (with-slots (period scheduler) timer
@@ -235,8 +236,9 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
 (defmethod invoke-callback ((wheel wheel) (timer timer))
   "Wrap funcall to callback, the purpose of this method is to check and then reinstall a periodical timer."
   ;; if timeout is sensitive for this timer, the related codes can be added here.
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (lambda ()
-    (funcall (callback timer) wheel timer)))
+    (funcall (the function (callback timer)) wheel timer)))
 
 (defmethod invoke-callback :after ((wheel wheel) (timer timer))
   (decf (repeats timer))
@@ -266,6 +268,7 @@ or they will run once even if their repeats less than zero."
                    (funcall (invoke-callback wheel timer))
 	           (install-timer wheel timer))))))
 
+(declaim (inline calculate-future-slot))
 (defun calculate-future-slot (current-slot remaining slots)
   ;; minimum resolution of 1 tick to make sure an urgent task runs in the next wheel period
   (mod (+ current-slot (max 1 remaining ))
@@ -324,11 +327,12 @@ else enqueue the timer to the current slot."
         (slot-value timer 'remaining) nil
         (slot-value timer 'installed-slot) nil))
 
+(declaim (inline calculate-slot-index))
 (defmethod calculate-slot-index ((wheel wheel) (timer timer))
   "Calculate the first slot index depends on the timer and the wheel.
 Note that the start slot of the timer means it will begin to run after this time,
 but not means it should run as soon as the time is fulfilled."
-  (with-slots (start repeats period) timer
+  (with-slots (start) timer
     (let* ((now (get-current-universal-milliseconds)))
       (if (> start now)
           (truncate (/ (- now start) (wheel-resolution wheel)))
