@@ -753,7 +753,7 @@
     (is eql 10 (tw::repeats timer))
 
     (setf start (n-seconds-later (local-time:now) 1)) ; setf new start and end
-    (setf end (n-seconds-later start 1))
+    (setf end (n-seconds-later start 0.2))
     (setf (slot-value timer 'tw::start) (tw::timestamp->universal-milliseconds start)
           (slot-value timer 'tw::end) (tw::timestamp->universal-milliseconds end))
 
@@ -764,7 +764,9 @@
     (is eql 0 (tw::repeats timer))
     (restore-timer-repeats timer repeat)
 
-    (is eql t (tw:schedule-timer wheel1 timer delay)) ; schedule but expired
+    (setf (slot-value timer 'tw::start) (tw::timestamp->universal-milliseconds (n-seconds-later (local-time:now) -1))
+          (slot-value timer 'tw::end) (tw::timestamp->universal-milliseconds (n-seconds-later (local-time:now) -1)))
+    (is eql nil (tw:schedule-timer wheel1 timer delay)) ; schedule but expired
     (is eql wheel1 (tw::scheduler timer))
 
     (is eql 10 (tw::repeats timer)) ; can be scheduled, but it has already expired, so repeats did not change
