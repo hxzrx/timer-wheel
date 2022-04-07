@@ -8,7 +8,7 @@ The differences between this lib and the vanilla lib are:
 
 More Detailed test cases were written and all were passed in sbcl and ccl.
 
-The results showed that the new lib can schedule at the rate of about 90M times per second, under my linux vm with sbcl 2.2.3 installed.
+A not strict test showed that the new lib could schedule at the rate of about 90M times per second, under my linux vm with sbcl 2.2.3 installed.
 
 # Basic Usage
 1. Create a wheel instance with make-wheel.
