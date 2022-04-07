@@ -39,21 +39,21 @@
   time...i.e. we've missed the time getting to this thread, then increment the
   *timeout-overrun* counter, and keep going as though all was well.  I cannot
   think of any specific failure behavior that would be generically ok."
-  (let ((new-start (current-universal-milliseconds))
-	(new-end (+ (context-end context)
-		    (context-resolution context))))
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
+  (let ((new-start (the fixnum (current-universal-milliseconds)))
+	(new-end (the fixnum (+ (the fixnum (context-end context))
+		                (the fixnum (context-resolution context))))))
     (setf (context-end context) new-end)
-    (let ((this-sleep (/ (- new-end new-start)
-			 +milliseconds-per-second+)))
+    (let ((sleep-sec (the fixnum (- new-end new-start))))
       ;;(log:info "sleep time: ~,2f seconds!" this-sleep)
-      (if (minusp this-sleep)
+      (if (minusp sleep-sec)
 	  (progn
 	    ;; Document the miss and reset the timeout as though
 	    ;; we just ended a perfect sleep.
-	    (incf (timeout-overrun context))
+	    (incf (the fixnum (timeout-overrun context)))
 	    (setf (context-end context) new-start))
 	  ;; At least some amount to sleep, so do it.
-	  (sleep this-sleep))
+	  (sleep (the ratio (/ sleep-sec +milliseconds-per-second+))))
       #+nil
       (format t "Just slept ~A milliseconds~%"
 	      (- new-end new-start)))))
