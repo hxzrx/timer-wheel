@@ -311,10 +311,11 @@ or they will run once even if their repeats less than zero."
   "This method enqueues the timer to the slot of the wheel, according to the remaining of the timer.
 If this timer will be called within one round of the wheel (from the next slot), calculate it's accurate slot index,
 else enqueue the timer to the current slot."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (unless (scheduled-p timer)
     (error 'unscheduled :timer timer))
-  (let ((max-wheel-ticks (length (slots wheel)))
-        (remaining-timer (remaining timer)))
+  (let ((max-wheel-ticks (length (the (simple-vector *) (slots wheel))))
+        (remaining-timer (the fixnum (remaining timer))))
     (if (< remaining-timer max-wheel-ticks) ; will be called within one round of the wheel
 	(let ((future-slot (calculate-future-slot ; calculate the accurate slot index
 			    (atomic-place (current-slot wheel))
@@ -325,11 +326,13 @@ else enqueue the timer to the current slot."
 	  (enqueue timer (svref (slots wheel) future-slot))) ; enqueue is thread safe
 	;; The timer needs to be reinstalled later
 	(let ((current-slot-id (atomic-place (current-slot wheel))))
-          (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
+          ;; substract ticks num of a round if the timer cannot run with a round
+          (decf (the fixnum (remaining timer)) max-wheel-ticks)
 	  (enqueue timer (svref (slots wheel) current-slot-id)) ; enqueue the timer to the current slot
 	  (setf (installed-slot timer) current-slot-id))) ; the accurate will be re-caculated in the future
     t))
 
+#+:ignore
 (defmethod reinstall-timer ((wheel wheel) (timer timer))
   "Exactly the same as install-timer, except some state related slot are set here."
   (setf (slot-value timer 'remaining) (period timer)
@@ -349,7 +352,16 @@ else enqueue the timer to the current slot."
                (setf (installed-slot timer) (atomic-place (current-slot wheel)))))
     t))
 
+(defmethod reinstall-timer ((wheel wheel) (timer timer))
+  "Exactly the same as install-timer, except some state related slot are set here."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
+  (setf (slot-value timer 'remaining) (period timer)
+        (slot-value timer 'status) :ok
+        (slot-value timer 'scheduled-p) t)
+  (install-timer wheel timer))
+
 (defmethod uninstall-timer ((wheel wheel) (timer timer))
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (setf (slot-value timer 'status) :canceled
         (slot-value timer 'scheduled-p) nil
         (slot-value timer 'remaining) nil
