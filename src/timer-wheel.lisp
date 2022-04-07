@@ -248,6 +248,7 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
           (log:info "The timer has expired: ~d" timer)
           (reinstall-timer wheel timer)))))
 
+#|
 (defun tick (wheel)
   "Tick function runs all timers in current slot.
 Note that this method does not check repeats of the timers,
@@ -267,12 +268,36 @@ or they will run once even if their repeats less than zero."
                (if (zerop (remaining timer))
                    (funcall (invoke-callback wheel timer))
 	           (install-timer wheel timer))))))
+|#
+
+(defun tick (wheel)
+  "Tick function runs all timers in current slot.
+Note that this method does not check repeats of the timers,
+so every timers enqueued should make sure they have repeats greater than zero,
+or they will run once even if their repeats less than zero."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
+  (let ((slot-queue nil)
+        (new-queue (make-queue 100))
+        (current-slot-atomic (current-slot wheel)))
+    ;; Update the wheel
+    (atomic-set (atomic-place current-slot-atomic)
+                (mod (1+ (the fixnum (atomic-place current-slot-atomic)))
+                     (length (the (simple-vector *) (slots wheel)))))
+    (setf slot-queue (atomic-exchange (svref (slots wheel) (atomic-place current-slot-atomic)) new-queue))
+    ;;(dolist (timer tlist)
+    (loop for timer = (dequeue slot-queue)
+          while timer
+          do (when (eq :ok (status timer)) ; currently only 2 status, :ok and :canceled
+               (if (zerop (the fixnum (remaining timer)))
+                   (funcall (the function (invoke-callback wheel timer)))
+                   (install-timer wheel timer))))))
 
 (declaim (inline calculate-future-slot))
 (defun calculate-future-slot (current-slot remaining slots)
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   ;; minimum resolution of 1 tick to make sure an urgent task runs in the next wheel period
-  (mod (+ current-slot (max 1 remaining ))
-       slots))
+  (mod (+ (the fixnum current-slot) (max 1 (the fixnum remaining)))
+       (the fixnum slots)))
 
 (defmethod install-timer :before (wheel timer)
   ;; This check can be moved to the :after method initialize-instance of wheel, or before manage-timer-wheel's loop.
