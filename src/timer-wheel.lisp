@@ -215,7 +215,6 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
   (setf (slot-value timer 'scheduler) new-scheduler)
   timer)
 
-(declaim (inline get-real-period))
 (defmethod get-real-period ((timer timer))
   "Return the timers period in milliseconds."
   (with-slots (period scheduler) timer
@@ -241,10 +240,11 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
     (funcall (the function (callback timer)) wheel timer)))
 
 (defmethod invoke-callback :after ((wheel wheel) (timer timer))
-  (decf (repeats timer))
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
+  (decf (the fixnum (repeats timer)))
   (with-slots (end) timer
-    (when (> (repeats timer) 0)
-      (if (and end (< (+ end *expired-epsilon*) (get-current-universal-milliseconds)))
+    (when (> (the fixnum (repeats timer)) 0)
+      (if (and end (< (+ (the fixnum end) (the fixnum *expired-epsilon*)) (get-current-universal-milliseconds)))
           (log:info "The timer has expired: ~d" timer)
           (reinstall-timer wheel timer)))))
 
