@@ -372,10 +372,11 @@ else enqueue the timer to the current slot."
   "Calculate the first slot index depends on the timer and the wheel.
 Note that the start slot of the timer means it will begin to run after this time,
 but not means it should run as soon as the time is fulfilled."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (with-slots (start) timer
     (let* ((now (get-current-universal-milliseconds)))
-      (if (> start now)
-          (truncate (/ (- now start) (wheel-resolution wheel)))
+      (if (> (the fixnum start) now)
+          (truncate (the ratio (/ (the fixnum (- now (the fixnum start))) (the fixnum (wheel-resolution wheel)))))
           1))))
 
 (defun schedule-timer (wheel timer &optional delay-seconds)
