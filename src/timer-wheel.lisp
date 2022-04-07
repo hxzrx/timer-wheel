@@ -302,6 +302,7 @@ or they will run once even if their repeats less than zero."
 (defmethod install-timer :before (wheel timer)
   ;; This check can be moved to the :after method initialize-instance of wheel, or before manage-timer-wheel's loop.
   ;; But it's reasonable to check here to make sure the wheel will continue if the thread exits unexpectly.
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (declare (ignore timer))
   (unless (wheel-thread wheel)
     (initialize-timer-wheel wheel)))
@@ -312,19 +313,21 @@ If this timer will be called within one round of the wheel (from the next slot),
 else enqueue the timer to the current slot."
   (unless (scheduled-p timer)
     (error 'unscheduled :timer timer))
-  (let ((max-wheel-ticks (length (slots wheel))))
-    (if (< (remaining timer) max-wheel-ticks) ; will be called within one round of the wheel
+  (let ((max-wheel-ticks (length (slots wheel)))
+        (remaining-timer (remaining timer)))
+    (if (< remaining-timer max-wheel-ticks) ; will be called within one round of the wheel
 	(let ((future-slot (calculate-future-slot ; calculate the accurate slot index
 			    (atomic-place (current-slot wheel))
-			    (remaining timer)
-			    (length (slots wheel)))))
+			    remaining-timer
+                            max-wheel-ticks)))
 	  (setf (remaining timer) 0                ; set to 0, will be called within a round
 		(installed-slot timer) future-slot)
 	  (enqueue timer (svref (slots wheel) future-slot))) ; enqueue is thread safe
 	;; The timer needs to be reinstalled later
-	(progn (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
-	       (enqueue timer (svref (slots wheel) (atomic-place (current-slot wheel)))) ; enqueue the timer to the current slot
-	       (setf (installed-slot timer) (atomic-place (current-slot wheel))))) ; the accurate will be re-caculated in the future
+	(let ((current-slot-id (atomic-place (current-slot wheel))))
+          (decf (remaining timer) max-wheel-ticks) ; substract ticks num of a round if the timer cannot run with a round
+	  (enqueue timer (svref (slots wheel) current-slot-id)) ; enqueue the timer to the current slot
+	  (setf (installed-slot timer) current-slot-id))) ; the accurate will be re-caculated in the future
     t))
 
 (defmethod reinstall-timer ((wheel wheel) (timer timer))
