@@ -418,6 +418,7 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
 
 (defun initialize-timer-wheel (wheel)
   "Ensure the WHEEL is stopped, then initialize the WHEEL context, and start the WHEEL thread."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (shutdown-timer-wheel wheel)
   (initialize-timer (wheel-context wheel)
 		    (wheel-resolution wheel))
