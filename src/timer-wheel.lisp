@@ -86,7 +86,7 @@ period: the period for the repeatable task, and the period should be exact n-tim
         So, if scheduler is initialized, the period should be a positive integer for periodical tasks,
         or nil for non-periodical tasks.
 end: the end time of the timer, will convert to universal time in milliseconds in make-timer.
-     for those unbound periodical tasks, this will initialized to a most-positive-fixnum.
+     for those unbound periodical tasks, this will initialized to most-positive-fixnum.
 scheduler: a scheduler this timer attached to, can be re-attached.
 result: sometimes one need the returned value of the callback function,
         and this slot provide a clumsy way to store the value,
@@ -386,7 +386,7 @@ Return T if the timer is succefully scheduled, and return NIl if it's failed.
 
 delay-seconds is used for some timer that will be sheduled some time later.
 For simplicity, if delay-seconds is specified, the start timer of the timer will not take effect.
-delay-seconds is usually for the kind of timer that is not well designed with many arguments supplied with make-timer,
+delay-seconds is usually for the kind of timer that is not well designed with many arguments supplied with make-timer.
 
 If one want to schedule a timer with wall time, make the timer with make-timer and supply a start-time argument,
   then called it with schedule-timer and left delay-seconds unsupplied."
@@ -464,7 +464,7 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
 (defmacro with-timeout ((wheel timeout &optional (scheduler (gensym)) (timer (gensym))) &body body)
   "Encapsule BODY into a timer and schedule it with TIMEOUT seconds and return the timer object.
 TIMEOUT is a positive real number in seconds.
-SCHEDULER and TIMER are symbols which can be used in BODY as the returned timer's callback's arguments"
+SCHEDULER and TIMER are symbols which can be used in BODY as the returned timer's callback's arguments."
   ;; (defparameter *wheel* (make-wheel))
   ;; (with-timeout (*wheel* 1) (format t "with timeout!~%"))
   ;; (with-timeout (*wheel* 1 schedul tim) (format t "Scheduler: ~d, timer: ~d.~%" (name schedul) (name tim)))
