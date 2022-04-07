@@ -1,6 +1,6 @@
 ;;;; In this file, two very simple timers were created to test the speed of the wheel.
 ;;;; The times were made beforehand and the callbacks almost did nothing and thus the tests reflected the scheduling rate.
-;;;; The results showed that this wheel can schedule at the rate of about 90M times per second.
+;;;; The results showed that this library can schedule at the rate of about 90M times per second on my linux vm with sbcl.
 
 (in-package #:timer-wheel.examples)
 
