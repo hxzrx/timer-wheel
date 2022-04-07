@@ -429,6 +429,7 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
 
 (defun manage-timer-wheel (wheel)
   "This is the main entry point of the timer WHEEL thread."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
   (loop (wait-for-timeout (wheel-context wheel)) ; invoke wait-for-timeout to adjust the time
         (when (reset wheel)
           (return))
