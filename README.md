@@ -115,17 +115,17 @@ Encapsule BODY into a timer and schedule it with TIMEOUT seconds and return the 
 
 lambda list: ((wheel timeout &optional (scheduler (gensym)) (timer (gensym))) &body body)
 
-## parameter *default-resolution*
+## parameter `*default-resolution*`
 The default milliseconds resolution of a wheel. Defaults to 100.
 
-## parameter *default-size*
+## parameter `*default-size*`
 Slots per wheel. Defaults to 100.
 For example, a wheel with resolution 100 and size 100 is a ten-seconds-long period scheduler.
 
-## parameter *expired-epsilon*
+## parameter `*expired-epsilon*`
 For those timers which has exipred time specified, *expired-epsilon* makes an reasonable tolerate to schedule them. Defaults to the value of *default-resolution*.
 
-## *wheel-list*
+## parameter `*wheel-list*`
 A list to keep all wheels. Defaults to nil.
 
 
