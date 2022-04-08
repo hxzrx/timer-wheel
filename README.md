@@ -8,7 +8,7 @@ The differences between this lib and the vanilla lib are:
 
 More Detailed test cases were written and all were passed in sbcl and ccl.
 
-A not strict test showed that the new lib could schedule at the rate of about 90M times per second, under my linux vm with sbcl 2.2.3 installed.
+A not strict test in sbcl showed that the new lib could schedule at the rate of about 100M times per second for the timers without delay, and about 60M times per second for the timers with delay. (see examples/perform.lisp)
 
 # Basic Usage
 1. Create a wheel instance with make-wheel.
