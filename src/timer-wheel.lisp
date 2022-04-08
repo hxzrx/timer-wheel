@@ -390,13 +390,14 @@ delay-seconds is usually for the kind of timer that is not well designed with ma
 
 If one want to schedule a timer with wall time, make the timer with make-timer and supply a start-time argument,
   then called it with schedule-timer and left delay-seconds unsupplied."
+  (declare (optimize (speed 3) (safety 0) (debug 0))) ; did not eliminate all optimizing notes
   (assert (or (null delay-seconds)
               (and (realp delay-seconds) (> delay-seconds 0))))
-  (when (<= (repeats timer) 0)
+  (when (<= (the fixnum (repeats timer)) 0)
     (return-from schedule-timer nil))
   (unless (eq wheel (scheduler timer))
     (attach-scheduler timer wheel))
-  (if (and (end timer) (< (+ (end timer) *expired-epsilon*)
+  (if (and (end timer) (< (+ (the fixnum (end timer)) (the fixnum *expired-epsilon*))
                           (get-current-universal-milliseconds)))
       (prog1 nil
         (log:info "Cannot schedule a timer that has already expired. Expire: ~d, Now: ~d"
@@ -404,8 +405,8 @@ If one want to schedule a timer with wall time, make the timer with make-timer a
                   (local-time:now)))
       (let ((calculated-timeout (if delay-seconds
                                     (round (* +milliseconds-per-second+ delay-seconds) (wheel-resolution wheel))
-                                    (calculate-slot-index wheel timer))))
-        (setf (slot-value timer 'remaining) (max 1 calculated-timeout)
+                                    (the fixnum (calculate-slot-index wheel timer)))))
+        (setf (slot-value timer 'remaining) (max 1 (the fixnum calculated-timeout))
               (slot-value timer 'scheduled-p) t)
         (install-timer wheel timer))))
 
