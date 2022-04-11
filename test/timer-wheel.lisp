@@ -1015,3 +1015,25 @@
               (format t "Test with-timeout, scheduler: ~d, timer: ~d.~%" (tw::name schedul) (tw::name tim))))
     (finish (with-timeout ((make-wheel) 0.00001 schedul tim)
               (format t "Test with-timeout, scheduler: ~d, timer: ~d.~%" (tw::name schedul) (tw::name tim))))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *test-bind* "I'm a global binding!"))
+
+(define-test timer-bindings :parent timer-wheel
+  (let* ((wheel (make-wheel))
+         (binds1 '((a 1) (b 2)))
+         (binds2 '((*test-bind* "I'm a local binding!")))
+         (cb1 (lambda (wh tm)
+                (declare (ignore  wh tm))
+                (format t "~&Print bindings, A = ~d, B = ~d.~%" a b)))
+         (cb2 (lambda (wh tm)
+                (declare (ignore  wh tm))
+                (format t "~&Print bindings, *test-bind* = ~d~%" *test-bind*)))
+         (timer1 (make-timer :callback cb1
+                             :scheduler wheel
+                             :bindings binds1))
+         (timer2 (make-timer :callback cb2
+                             :scheduler wheel
+                             :bindings binds2)))
+    (finish (schedule-timer wheel timer1))
+    (finish (schedule-timer wheel timer2))))

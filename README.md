@@ -4,7 +4,8 @@ The differences between this lib and the vanilla lib are:
 1. Use universal time instead of internal real time.
 2. Can schedule with wall time through a timestring.
 3. Can Schedule periodically tasks now.
-4. Remove locks and use atomic operations instead.
+4. Can set bindings for the timer.
+5. Remove locks and use atomic operations instead.
 
 More Detailed test cases were written and all were passed in sbcl and ccl.
 
@@ -48,14 +49,14 @@ timeout-p: T shows that is has a timeout when it got ran, NOT in use currently.
 
 status: default :OK, but when a timer is uninstalled, the status will be set to :canceled.
 
-bindings: specials bindings, may be useful in threads, NOT in use currently.
+bindings: specials bindings, may be useful in threads, the bindings of the callback function are produced in make-timer.
 
 ## function make-timer
 Return a new timer object.
 
 lambda list: (&key callback scheduler start-time end-time (repeat-times 1 repeat-times-supplied-p) period-in-seconds bindings (name (string (gensym "TIMER-"))))
 
-callback: a function that accepts WHEEL and TIMER arguments.
+callback: a function that accepts WHEEL and TIMER arguments, will be wrapped if bindings is not nil.
 
 scheduler: a wheel instance this new timer will attach to.
 
@@ -64,6 +65,8 @@ start-time: the earliest time this timer begins to run (not schedule), start-tim
 repeat-times: The times the timer will run, and 1 for non-periodical timer, The slot-value will decf by 1 after each run and stop when it get down to 0. If repeat-times is not supplied but period-in-seconds is supplied, repeats will try to be inferred.
 
 period-in-seconds: This is the interval value for the periodical timer, and nil for the non-periodical timer. But if scheduler is specified, it will convert to the time ticks with respect to the sceduler's resolution. If scheduler is not specified, it will convert to milliseconds and stored in the period slot also. Note that the timer's period in milliseconds should be a common multiple of the resolution of the scheduler, or else an error will be signaled. If repeat-times >= 2, and period-in-seconds is not supplied, the period will be inferenced from start, end, and repeats.
+
+bindings: local bindings for special variables, it should be a form like '((var1 val1) (var2 val2)).
 
 ## function attach-scheduler
 Attach a timer to a scheduler and (re)set the period. This is useful is a timer's not initialized with a wheel.

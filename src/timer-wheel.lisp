@@ -94,7 +94,7 @@ result: sometimes one need the returned value of the callback function,
 scheduled-p: if it's been scheduled, this slot will be set to T.
 timeout-p: T shows that is has a timeout when it got ran, NOT in use currently.
 status: default :OK, but when a timer is uninstalled, the status will be set to :canceled.
-bindings: specials bindings, may be useful in threads, NOT in use currently.
+bindings: specials bindings, may be useful in threads, the bindings of the callback function are produced in make-timer.
 "))
 
 (defun inspect-timer (timer)
@@ -136,7 +136,8 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                    Note that the timer's period in milliseconds should be a common multiple of the resolution of the scheduler,
                      or else an error will be signaled.
                    If repeat-times >= 2, and period-in-seconds is not supplied,
-                     the period will be inferenced from start, end, and repeats."
+                     the period will be inferenced from start, end, and repeats.
+bindings: local bindings for special variables, it should be a form like '((var1 val1) (var2 val2))."
   (check-type period-in-seconds (or null positive-real))
   (check-type start-time    (or null positive-fixnum string local-time:timestamp)) ; may allow universal time in the future
   (check-type repeat-times  (or null positive-fixnum))
@@ -183,7 +184,14 @@ period-in-seconds: This is the interval value for the periodical timer, and nil 
                          ))))
     (when (and start end) (assert (>= end start)))
     (make-instance 'timer
-		   :callback callback
+		   ;;:callback callback
+                   :callback (if bindings
+                                 (let ((vars (mapcar #'first bindings))
+                                       (vals (mapcar #'second bindings)))
+                                   (lambda (wheel timer)
+                                     (progv vars vals
+                                       (funcall callback wheel timer))))
+                                 callback)
                    :period period
                    :start start
                    :repeats repeats
