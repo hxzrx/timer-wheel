@@ -5,6 +5,7 @@
 This is a fork of Nick Patrick's timer-wheel <https://github.com/npatrick04/timer-wheel> with several aspects got enhanced."
   :author "He Xiang-zhi <xz.he@qq.com>"
   :license "MIT"
+  :version 1.0.0
   :depends-on (#:bordeaux-threads
                #:local-time
                #:cl-fast-queues
