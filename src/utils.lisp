@@ -47,12 +47,13 @@
   (get-current-universal-milliseconds))
 
 (declaim (inline get-local-timezone))
-(defun get-local-timezone ()
-  "Get time zone number of the local machine,
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun get-local-timezone ()
+    "Get time zone number of the local machine,
 plus number for the eastern time zones and minus number for the western time zones.
 So, the time zone of Beijing is 8."
-  (declare (optimize (speed 3) (safety 0) (debug 0)))
-  (- (the fixnum (nth-value 8 (decode-universal-time (get-universal-time))))))
+    (declare (optimize (speed 3) (safety 0) (debug 0)))
+    (- (the fixnum (nth-value 8 (decode-universal-time (get-universal-time)))))))
 
 (defconstant +local-timezone+ (get-local-timezone))
 
