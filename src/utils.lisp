@@ -156,7 +156,7 @@ or a list of bindings of the form:
   #-sbcl(declare (ignore name))
   #+sbcl(declare (ignore init-length))
   #+sbcl(sb-concurrency:make-queue :name name)
-  #-sbcl(cl-fast-queues:make-safe-fifo :init-length init-length :waitp nil))
+  #-sbcl(cl-fast-queues:make-safe-fifo :init-length init-length))
 
 (defun enqueue (item queue)
   #+sbcl(sb-concurrency:enqueue item queue)
