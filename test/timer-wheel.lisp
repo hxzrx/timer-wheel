@@ -1025,6 +1025,7 @@
          (binds2 '((*test-bind* "I'm a local binding!")))
          (cb1 (lambda (wh tm)
                 (declare (ignore  wh tm))
+                (declare (special a b))
                 (format t "~&Print bindings, A = ~d, B = ~d.~%" a b)))
          (cb2 (lambda (wh tm)
                 (declare (ignore  wh tm))
