@@ -2,18 +2,30 @@
 
 (log:debug :debug)
 
-(defconstant +milliseconds-per-second+ 1000)
-(defconstant +unix-epoch+ (encode-universal-time 0 0 0 1 1 1970 0))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defconstant +milliseconds-per-second+ 1000)
+  (defconstant +unix-epoch+ (encode-universal-time 0 0 0 1 1 1970 0))
 
-(deftype positive-real ()
-  '(real (0) *))
+  (deftype positive-real ()
+    '(real (0) *))
 
-(deftype positive-fixnum ()
-  `(integer 1 ,most-positive-fixnum))
+  (deftype positive-fixnum ()
+    `(integer 1 ,most-positive-fixnum))
 
-(defparameter *default-time-format*
-  '((:YEAR 4) #\- (:MONTH 2) #\- (:DAY 2) #\T (:HOUR 2) #\: (:MIN 2) #\: (:SEC 2) #\. (:USEC 6) :GMT-OFFSET-OR-Z)
-  "rfc3339 format")
+  (defparameter *default-time-format*
+    '((:YEAR 4) #\- (:MONTH 2) #\- (:DAY 2) #\T (:HOUR 2) #\: (:MIN 2) #\: (:SEC 2) #\. (:USEC 6) :GMT-OFFSET-OR-Z)
+    "rfc3339 format")
+
+  (declaim (inline get-local-timezone))
+
+  (defun get-local-timezone ()
+    "Get time zone number of the local machine,
+plus number for the eastern time zones and minus number for the western time zones.
+So, the time zone of Beijing is 8."
+    (declare (optimize (speed 3) (safety 0) (debug 0)))
+    (- (the fixnum (nth-value 8 (decode-universal-time (get-universal-time))))))
+
+  (defconstant +local-timezone+ (get-local-timezone)))
 
 (defclass timeout-context ()
   ((resolution :accessor context-resolution :initarg :resolution :initform nil)
@@ -27,8 +39,8 @@
   "Get the universal time, in millisecond"
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (multiple-value-bind (sec nsec) (local-time::%get-current-time)
-    (the fixnum (+ (the fixnum (* (+ (the fixnum sec) +unix-epoch+)
-                                  +milliseconds-per-second+))
+    (the fixnum (+ (the fixnum (* (+ (the fixnum sec) #.+unix-epoch+)
+                                  #.+milliseconds-per-second+))
                    (truncate (/ (the fixnum nsec) 1000000))))))
 
 #+:ignore
@@ -46,16 +58,6 @@
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (get-current-universal-milliseconds))
 
-(declaim (inline get-local-timezone))
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun get-local-timezone ()
-    "Get time zone number of the local machine,
-plus number for the eastern time zones and minus number for the western time zones.
-So, the time zone of Beijing is 8."
-    (declare (optimize (speed 3) (safety 0) (debug 0)))
-    (- (the fixnum (nth-value 8 (decode-universal-time (get-universal-time)))))))
-
-(defconstant +local-timezone+ (get-local-timezone))
 
 (declaim (inline timestring->timestamp))
 (defun timestring->timestamp (timestring)
@@ -76,7 +78,7 @@ See the examples below."
                                :allow-missing-date-part nil
                                :allow-missing-time-part nil
                                :allow-missing-timezone-part t
-                               :offset (* +local-timezone+ 60 60)))
+                               :offset #.(* +local-timezone+ 60 60)))
 
 (declaim (inline timestamp->timestring))
 (defun timestamp->timestring (timestamp &key (format *default-time-format*) (timezone local-time:*default-timezone*))
@@ -91,7 +93,7 @@ See the examples below."
   "Convert a timestamp object to universal time, in milliseconds"
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (declare (local-time:timestamp timestamp))
-  (the fixnum (+ (the fixnum (* (the fixnum (local-time:timestamp-to-universal timestamp)) +milliseconds-per-second+))
+  (the fixnum (+ (the fixnum (* (the fixnum (local-time:timestamp-to-universal timestamp)) #.+milliseconds-per-second+))
                  (the fixnum (local-time:timestamp-millisecond timestamp)))))
 
 (declaim (inline timestring->universal-milliseconds))
@@ -101,7 +103,7 @@ See the examples below."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (declare (string timestring))
   (let ((timestamp (the local-time:timestamp (timestring->timestamp timestring))))
-    (the fixnum (+ (the fixnum (* (the fixnum (local-time:timestamp-to-universal timestamp)) +milliseconds-per-second+))
+    (the fixnum (+ (the fixnum (* (the fixnum (local-time:timestamp-to-universal timestamp)) #.+milliseconds-per-second+))
                    (the fixnum (local-time:timestamp-millisecond timestamp))))))
 
 (declaim (inline universal-milliseconds->timestamp))
