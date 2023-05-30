@@ -9,7 +9,8 @@ This is a fork of Nick Patrick's timer-wheel <https://github.com/npatrick04/time
   :depends-on (#:bordeaux-threads
                #:local-time
                #:cl-fast-queues
-               #:log4cl)
+               #:log4cl
+               #+sbcl :sb-concurrency)
   :serial t
   :in-order-to ((test-op (test-op "timer-wheel.test")))
   :components ((:module "src"
